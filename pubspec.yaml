@@ -1,0 +1,25 @@
+name: newscatcher_poc
+description: POC Flutter app to test NewsCatcher News API v3 + Local News API v3 (excluding search_by_link).
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  http: ^1.2.2
+  provider: ^6.1.2
+  geolocator: ^13.0.2
+  cached_network_image: ^3.4.1
+  webview_flutter: ^4.10.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
