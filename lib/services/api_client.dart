@@ -197,35 +197,38 @@ class ApiClient {
         rawBody: resp.body,
       );
     }
-    if (resp.statusCode == 403 || resp.statusCode >= 500) {
-      final message = _truncate(resp.body);
-      _diagnostics.recordError(message, status: resp.statusCode);
-      return ApiResponse(
-        status: resp.statusCode,
-        json: const {"articles": <dynamic>[]},
-        rawBody: resp.body,
-      );
-    }
-    if (resp.statusCode != 200) {
-      final message = _truncate(resp.body);
-      debugPrint("API error: ${resp.statusCode} $message");
-      _diagnostics.recordError(message, status: resp.statusCode);
-      throw ApiRequestException(
-        method: method,
-        url: url,
-        endpointName: endpointName,
-        status: resp.statusCode,
-        body: message,
-      );
-    }
     try {
       final decoded = jsonDecode(resp.body);
       if (decoded is Map<String, dynamic>) {
         debugPrint("← JSON keys: ${decoded.keys.join(", ")}");
-        return ApiResponse(status: resp.statusCode, json: decoded, rawBody: resp.body);
+        if (resp.statusCode != 200) {
+          final message = _truncate(resp.body);
+          debugPrint("API error: ${resp.statusCode} $message");
+          _diagnostics.recordError(message, status: resp.statusCode);
+          return ApiResponse(
+            status: resp.statusCode,
+            json: decoded,
+            rawBody: resp.body,
+          );
+        }
+        return ApiResponse(
+          status: resp.statusCode,
+          json: decoded,
+          rawBody: resp.body,
+        );
       }
       throw FormatException("Expected JSON object but got ${decoded.runtimeType}.");
     } catch (error) {
+      if (resp.statusCode != 200) {
+        final message = _truncate(resp.body);
+        debugPrint("API error: ${resp.statusCode} $message");
+        _diagnostics.recordError(message, status: resp.statusCode);
+        return ApiResponse(
+          status: resp.statusCode,
+          json: const {"articles": <dynamic>[]},
+          rawBody: resp.body,
+        );
+      }
       final message = "JSON parse error: $error";
       debugPrint("API JSON parse error: $message");
       _diagnostics.recordError(message, status: resp.statusCode);

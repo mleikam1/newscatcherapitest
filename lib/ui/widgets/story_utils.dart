@@ -14,8 +14,16 @@ String? storyDomain(Article article) {
 
 String? publisherLogoUrl(Article article) {
   final domain = storyDomain(article);
-  if (domain == null) return null;
-  return "https://www.google.com/s2/favicons?sz=128&domain_url=$domain";
+  if (domain == null || domain.contains(" ")) return null;
+  final uri = Uri.https(
+    "www.google.com",
+    "/s2/favicons",
+    {
+      "sz": "128",
+      "domain_url": domain,
+    },
+  );
+  return uri.toString();
 }
 
 String displayPublisher(Article article) {

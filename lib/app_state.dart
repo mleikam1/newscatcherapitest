@@ -7,6 +7,16 @@ class AppState extends ChangeNotifier {
   double? longitude;
   String? city;
   String? state;
+  String selectedLanguage = "en";
+
+  void setLanguage(String language) {
+    final normalized = language.trim().toLowerCase();
+    if (normalized.isEmpty || normalized == selectedLanguage) {
+      return;
+    }
+    selectedLanguage = normalized;
+    notifyListeners();
+  }
 
   bool locationPermissionGranted = false;
   String locationStatus = "Initializing location…";

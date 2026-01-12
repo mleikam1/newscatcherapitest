@@ -31,6 +31,10 @@ class LocalNewsService {
   Future<ApiResponse> localNews({
     String? city,
     String? state,
+    double? latitude,
+    double? longitude,
+    int radiusKm = 50,
+    String? language,
     int page = 1,
     int pageSize = _defaultPageSize,
   }) {
@@ -40,11 +44,19 @@ class LocalNewsService {
       "page": page,
       "page_size": pageSize,
     };
+    if (latitude != null && longitude != null) {
+      body["lat"] = latitude;
+      body["lon"] = longitude;
+      body["radius_km"] = radiusKm;
+    }
     if (city != null && city.trim().isNotEmpty) {
       body["city"] = city.trim();
     }
     if (state != null && state.trim().isNotEmpty) {
       body["state"] = state.trim();
+    }
+    if (language != null && language.trim().isNotEmpty) {
+      body["lang"] = language.trim();
     }
     return _client
         .post(
