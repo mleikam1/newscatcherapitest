@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../app_state.dart';
 import '../../models/article.dart';
 import '../../services/api_client.dart';
+import '../../services/article_filter.dart';
 import '../../services/local_news_service.dart';
 import 'article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
@@ -24,15 +25,16 @@ class LocalTabScreen extends StatefulWidget {
 
 class _LocalTabScreenState extends State<LocalTabScreen> {
   final _section = _SectionState();
-  static const int _pageSize = 20;
+  static const int _pageSize = 30;
+  static const int _maxPages = 3;
 
   String? _city;
   String? _state;
   double? _latitude;
   double? _longitude;
-  String _language = "en";
+  String _language = ArticleFilter.requiredLanguage;
   bool _initialized = false;
-  bool _stateFallbackActive = false;
+  LocalFallbackMode _fallbackMode = LocalFallbackMode.cityRadius;
   String? _fallbackMessage;
 
   @override
@@ -43,20 +45,21 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     final nextState = appState.state;
     final nextLatitude = appState.latitude;
     final nextLongitude = appState.longitude;
-    final nextLanguage = appState.selectedLanguage;
+    final nextLanguage = ArticleFilter.requiredLanguage;
     if (!_initialized ||
         nextCity != _city ||
         nextState != _state ||
         nextLatitude != _latitude ||
         nextLongitude != _longitude ||
-        nextLanguage != _language) {
+        nextLanguage != _language ||
+        appState.selectedLanguage != _language) {
       _city = nextCity;
       _state = nextState;
       _latitude = nextLatitude;
       _longitude = nextLongitude;
       _language = nextLanguage;
       _initialized = true;
-      _stateFallbackActive = false;
+      _fallbackMode = LocalFallbackMode.cityRadius;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadLocalNews(loadMore: false);
       });
@@ -67,7 +70,20 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     if (_section.isLoading) return;
     if (loadMore && !_section.hasMore) return;
 
+    if (_latitude == null && _longitude == null && _city == null && _state == null) {
+      setState(() {
+        _section.error = "Location required to load local news.";
+        _section.items = [];
+        _section.hasMore = false;
+      });
+      return;
+    }
+
     final nextPage = loadMore ? _section.page + 1 : 1;
+    if (nextPage > _maxPages) {
+      setState(() => _section.hasMore = false);
+      return;
+    }
     setState(() {
       _section.isLoading = true;
       _section.error = null;
@@ -76,53 +92,27 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
         _section.items = [];
         _section.hasMore = true;
         _section.page = 0;
+        _fallbackMode = LocalFallbackMode.cityRadius;
       }
     });
 
     try {
-      final response = await _fetchLocalNews(nextPage);
-      final errorMessage = extractApiMessage(response);
-      if (errorMessage != null) {
-        setState(() => _section.error = errorMessage);
+      final result = await _loadWithFallback(nextPage);
+      if (result.errorMessage != null) {
+        setState(() => _section.error = result.errorMessage);
         return;
       }
-      final rawArticles =
-          (response.json?["articles"] as List<dynamic>?) ?? const [];
-      final parsed = rawArticles
-          .whereType<Map<String, dynamic>>()
-          .map(Article.fromJson)
-          .where((article) => _matchesLanguage(article, _language))
-          .toList();
-      if (parsed.isEmpty && !_stateFallbackActive && _state != null) {
-        debugPrint(
-          "Local news empty for city/state. Retrying with state-only query.",
-        );
-        _stateFallbackActive = true;
-        setState(() {
-          _fallbackMessage =
-              "We couldn't find city stories. Showing statewide coverage.";
-        });
-        await _retryWithStateOnly(nextPage);
-        return;
+      if (result.fallbackMessage != null) {
+        setState(() => _fallbackMessage = result.fallbackMessage);
       }
-      final merged = _mergeUnique(_section.items, parsed);
+      final merged = _mergeUnique(_section.items, result.articles);
       setState(() {
         _section.items = merged;
         _section.page = nextPage;
-        _section.hasMore = parsed.length >= _pageSize;
+        _section.hasMore = result.articles.length >= _pageSize && nextPage < _maxPages;
       });
     } catch (e, stack) {
-      final message = formatApiError(e, endpointName: "local.local_news");
-      if (!_stateFallbackActive && _state != null) {
-        _stateFallbackActive = true;
-        setState(() {
-          _fallbackMessage =
-              "We couldn't load city news. Showing statewide coverage instead.";
-        });
-        debugPrint("Local news error: $message\n$stack");
-        await _retryWithStateOnly(nextPage);
-        return;
-      }
+      final message = "Local news error: $e";
       setState(() => _section.error = message);
       debugPrint("Local news error: $message\n$stack");
     } finally {
@@ -130,54 +120,121 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     }
   }
 
-  Future<ApiResponse> _fetchLocalNews(int page) {
-    if (_stateFallbackActive) {
-      return widget.local.localNews(
-        state: _state,
-        latitude: _latitude,
-        longitude: _longitude,
-        language: _language,
-        page: page,
-        pageSize: _pageSize,
+  Future<_LocalFetchResult> _loadWithFallback(int page) async {
+    LocalFallbackMode currentMode = _fallbackMode;
+    String? fallbackMessage;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      final response = await _fetchLocalNews(page, currentMode);
+      final errorMessage = extractApiMessage(response);
+      if (errorMessage != null) {
+        return _LocalFetchResult(
+          articles: [],
+          errorMessage: errorMessage,
+          fallbackMessage: fallbackMessage,
+        );
+      }
+      final rawArticles =
+          (response.json?["articles"] as List<dynamic>?) ?? const [];
+      final parsed = rawArticles
+          .whereType<Map<String, dynamic>>()
+          .map(Article.fromJson)
+          .toList();
+      final filtered = ArticleFilter.filterAndSort(
+        parsed,
+        maxAge: ArticleFilter.localMaxAge,
+        context: "local_news",
+      );
+      if (page == 1 && filtered.length < 10) {
+        final nextMode = _nextFallbackMode(currentMode);
+        if (nextMode != null) {
+          currentMode = nextMode;
+          fallbackMessage = _fallbackMessageForMode(currentMode);
+          _fallbackMode = currentMode;
+          continue;
+        }
+      }
+      _fallbackMode = currentMode;
+      return _LocalFetchResult(
+        articles: filtered,
+        errorMessage: null,
+        fallbackMessage: fallbackMessage,
       );
     }
+    return _LocalFetchResult(
+      articles: [],
+      errorMessage: "Local news returned too few stories.",
+      fallbackMessage: fallbackMessage,
+    );
+  }
+
+  Future<ApiResponse> _fetchLocalNews(int page, LocalFallbackMode mode) {
+    final radiusMiles = mode == LocalFallbackMode.cityRadius ? 30 : 50;
+    final metroCity = _metroFallbackCity();
+    final city = mode == LocalFallbackMode.metroFallback ? metroCity : _city;
     return widget.local.localNews(
-      city: _city,
+      city: mode == LocalFallbackMode.stateOnly ? null : city,
       state: _state,
       latitude: _latitude,
       longitude: _longitude,
       language: _language,
+      country: ArticleFilter.requiredCountry,
+      radiusMiles: radiusMiles,
       page: page,
       pageSize: _pageSize,
     );
   }
 
-  Future<void> _retryWithStateOnly(int page) async {
-    final response = await widget.local.localNews(
-      state: _state,
-      latitude: _latitude,
-      longitude: _longitude,
-      language: _language,
-      page: page,
-      pageSize: _pageSize,
-    );
-    final errorMessage = extractApiMessage(response);
-    if (errorMessage != null) {
-      setState(() => _section.error = errorMessage);
-      return;
+  LocalFallbackMode? _nextFallbackMode(LocalFallbackMode currentMode) {
+    if (currentMode == LocalFallbackMode.cityRadius) {
+      return LocalFallbackMode.expandedRadius;
     }
-    final rawArticles = (response.json?["articles"] as List<dynamic>?) ?? const [];
-    final parsed = rawArticles
-        .whereType<Map<String, dynamic>>()
-        .map(Article.fromJson)
-        .where((article) => _matchesLanguage(article, _language))
-        .toList();
-    final merged = _mergeUnique(_section.items, parsed);
-    setState(() {
-      _section.items = merged;
-      _section.page = page;
-      _section.hasMore = parsed.length >= _pageSize;
-    });
+    if (currentMode == LocalFallbackMode.expandedRadius && _state != null) {
+      return LocalFallbackMode.stateOnly;
+    }
+    if (currentMode == LocalFallbackMode.stateOnly && _metroFallbackCity() != null) {
+      return LocalFallbackMode.metroFallback;
+    }
+    return null;
+  }
+
+  String? _fallbackMessageForMode(LocalFallbackMode mode) {
+    switch (mode) {
+      case LocalFallbackMode.expandedRadius:
+        return "Expanding radius for more local coverage.";
+      case LocalFallbackMode.stateOnly:
+        return "We couldn't find enough city stories. Showing statewide coverage.";
+      case LocalFallbackMode.metroFallback:
+        return "Showing metro-area coverage nearby.";
+      case LocalFallbackMode.cityRadius:
+        return null;
+    }
+  }
+
+  String? _metroFallbackCity() {
+    if (_state == null) return null;
+    const metroByState = {
+      "CA": "Los Angeles",
+      "CALIFORNIA": "Los Angeles",
+      "NY": "New York",
+      "NEW YORK": "New York",
+      "TX": "Dallas",
+      "TEXAS": "Dallas",
+      "FL": "Miami",
+      "FLORIDA": "Miami",
+      "IL": "Chicago",
+      "ILLINOIS": "Chicago",
+      "PA": "Philadelphia",
+      "PENNSYLVANIA": "Philadelphia",
+      "GA": "Atlanta",
+      "GEORGIA": "Atlanta",
+      "WA": "Seattle",
+      "WASHINGTON": "Seattle",
+      "MA": "Boston",
+      "MASSACHUSETTS": "Boston",
+      "DC": "Washington",
+      "DISTRICT OF COLUMBIA": "Washington",
+    };
+    return metroByState[_state?.toUpperCase()];
   }
 
   List<Article> _mergeUnique(List<Article> existing, List<Article> incoming) {
@@ -193,15 +250,18 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
   }
 
   String _articleKey(Article article) {
+    if (article.id != null && article.id!.isNotEmpty) {
+      return article.id!;
+    }
     final link = article.link;
-    if (link != null && link.isNotEmpty) return link;
+    if (link != null && link.isNotEmpty) {
+      final uri = Uri.tryParse(link);
+      if (uri != null) {
+        return "${uri.host.toLowerCase()}${uri.path.toLowerCase()}";
+      }
+      return link;
+    }
     return "${article.title ?? ""}-${article.publishedDate ?? ""}";
-  }
-
-  bool _matchesLanguage(Article article, String language) {
-    final articleLang = article.language?.toLowerCase();
-    if (articleLang == null) return false;
-    return articleLang == language.toLowerCase();
   }
 
   void _openDetail(Article article) {
@@ -215,9 +275,11 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final locationLabel = _stateFallbackActive
+    final fallbackCity =
+        _fallbackMode == LocalFallbackMode.metroFallback ? _metroFallbackCity() : _city;
+    final locationLabel = _fallbackMode == LocalFallbackMode.stateOnly
         ? (_state ?? "United States")
-        : (_city ?? _state ?? "United States");
+        : (fallbackCity ?? _state ?? "United States");
 
     return ListView(
       children: [
@@ -256,15 +318,17 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
           else
             const SizedBox.shrink()
         else ...[
-          HeroStoryCard(
-            article: _section.items.first,
-            onTap: () => _openDetail(_section.items.first),
-          ),
-          for (final article in _section.items.skip(1))
-            StoryListRow(
-              article: article,
-              onTap: () => _openDetail(article),
+          if (_section.items.isNotEmpty) ...[
+            HeroStoryCard(
+              article: _section.items.first,
+              onTap: () => _openDetail(_section.items.first),
             ),
+            for (final article in _section.items.skip(1))
+              StoryListRow(
+                article: article,
+                onTap: () => _openDetail(article),
+              ),
+          ],
           PagingFooter(
             isLoading: _section.isLoading,
             hasMore: _section.hasMore,
@@ -275,6 +339,20 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     );
   }
 
+}
+
+enum LocalFallbackMode { cityRadius, expandedRadius, stateOnly, metroFallback }
+
+class _LocalFetchResult {
+  final List<Article> articles;
+  final String? errorMessage;
+  final String? fallbackMessage;
+
+  _LocalFetchResult({
+    required this.articles,
+    required this.errorMessage,
+    required this.fallbackMessage,
+  });
 }
 
 class _SectionState {

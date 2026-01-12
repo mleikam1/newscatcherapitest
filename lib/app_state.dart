@@ -10,8 +10,15 @@ class AppState extends ChangeNotifier {
   String selectedLanguage = "en";
 
   void setLanguage(String language) {
-    final normalized = language.trim().toLowerCase();
-    if (normalized.isEmpty || normalized == selectedLanguage) {
+    var normalized = language.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      normalized = "en";
+    }
+    if (normalized != "en") {
+      debugPrint("Language override enforced to en.");
+      normalized = "en";
+    }
+    if (normalized == selectedLanguage) {
       return;
     }
     selectedLanguage = normalized;

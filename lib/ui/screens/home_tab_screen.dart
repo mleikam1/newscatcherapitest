@@ -3,20 +3,19 @@ import 'package:provider/provider.dart';
 
 import '../../app_state.dart';
 import '../../models/article.dart';
-import '../../services/api_client.dart';
-import '../../services/news_service.dart';
+import '../../services/article_filter.dart';
+import '../../services/content_aggregation_manager.dart';
 import '../screens/article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
 import '../widgets/paging_footer.dart';
 import '../widgets/section_header.dart';
-import '../widgets/error_utils.dart';
 import '../widgets/story_list_row.dart';
 import '../widgets/state_message.dart';
 
 class HomeTabScreen extends StatefulWidget {
-  final NewsService news;
+  final ContentAggregationManager aggregation;
 
-  const HomeTabScreen({super.key, required this.news});
+  const HomeTabScreen({super.key, required this.aggregation});
 
   @override
   State<HomeTabScreen> createState() => _HomeTabScreenState();
@@ -27,17 +26,17 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   final _breakingNews = _SectionState();
   final _latestNews = _SectionState();
 
-  static const int _pageSize = 20;
-  static const String _country = "US";
-  String _language = "en";
+  static const int _pageSize = 30;
+  static const int _maxPages = 3;
+  String _language = ArticleFilter.requiredLanguage;
   bool _initialized = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final appState = context.watch<AppState>();
-    final nextLanguage = appState.selectedLanguage;
-    if (!_initialized || nextLanguage != _language) {
+    final nextLanguage = ArticleFilter.requiredLanguage;
+    if (!_initialized || nextLanguage != _language || appState.selectedLanguage != _language) {
       _language = nextLanguage;
       _initialized = true;
       _loadTopHeadlines();
@@ -49,12 +48,10 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   Future<void> _loadTopHeadlines({bool loadMore = false}) {
     return _loadSection(
       state: _topHeadlines,
-      endpointName: "news.latest_headlines",
-      loader: (page) => widget.news.latestHeadlines(
-        countries: _country,
-        lang: _language,
+      loader: (page) => widget.aggregation.fetchLatestHeadlinesPage(
         page: page,
         pageSize: _pageSize,
+        language: _language,
       ),
       loadMore: loadMore,
     );
@@ -67,12 +64,10 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   Future<void> _loadLatestNews({bool loadMore = false}) {
     return _loadSection(
       state: _latestNews,
-      endpointName: "news.latest_headlines",
-      loader: (page) => widget.news.latestHeadlines(
-        countries: _country,
-        lang: _language,
+      loader: (page) => widget.aggregation.fetchHomeFeedPage(
         page: page,
         pageSize: _pageSize,
+        language: _language,
       ),
       loadMore: loadMore,
     );
@@ -84,6 +79,10 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     if (loadMore && !state.hasMore) return;
 
     final nextPage = loadMore ? state.page + 1 : 1;
+    if (nextPage > _maxPages) {
+      setState(() => state.hasMore = false);
+      return;
+    }
     setState(() {
       state.isLoading = true;
       state.error = null;
@@ -95,30 +94,22 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     });
 
     try {
-      final response = await widget.news.breakingNews(
-        countries: _country,
-        lang: _language,
+      final response = await widget.aggregation.fetchBreakingNews(
+        language: _language,
       );
-      final errorMessage = extractApiMessage(response);
+      final errorMessage = response.errorMessage;
       if (errorMessage != null) {
         setState(() => state.error = errorMessage);
         return;
       }
-      final rawArticles =
-          (response.json?["articles"] as List<dynamic>?) ?? const [];
-      final parsed = rawArticles
-          .whereType<Map<String, dynamic>>()
-          .map(Article.fromJson)
-          .where((article) => _matchesLanguage(article, _language))
-          .toList();
-      final merged = _mergeUnique(state.items, parsed);
+      final merged = _mergeUnique(state.items, response.articles);
       setState(() {
         state.items = merged;
         state.page = nextPage;
         state.hasMore = false;
       });
     } catch (e, stack) {
-      final message = formatApiError(e, endpointName: "news.breaking_news");
+      final message = "Breaking news error: $e";
       setState(() {
         state.error = message;
       });
@@ -130,14 +121,17 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
   Future<void> _loadSection({
     required _SectionState state,
-    required String endpointName,
-    required Future<ApiResponse> Function(int page) loader,
+    required Future<AggregatedFeedResult> Function(int page) loader,
     required bool loadMore,
   }) async {
     if (state.isLoading) return;
     if (loadMore && !state.hasMore) return;
 
     final nextPage = loadMore ? state.page + 1 : 1;
+    if (nextPage > _maxPages) {
+      setState(() => state.hasMore = false);
+      return;
+    }
     setState(() {
       state.isLoading = true;
       state.error = null;
@@ -150,26 +144,19 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
     try {
       final response = await loader(nextPage);
-      final errorMessage = extractApiMessage(response);
+      final errorMessage = response.errorMessage;
       if (errorMessage != null) {
         setState(() => state.error = errorMessage);
         return;
       }
-      final rawArticles =
-          (response.json?["articles"] as List<dynamic>?) ?? const [];
-      final parsed = rawArticles
-          .whereType<Map<String, dynamic>>()
-          .map(Article.fromJson)
-          .where((article) => _matchesLanguage(article, _language))
-          .toList();
-      final merged = _mergeUnique(state.items, parsed);
+      final merged = _mergeUnique(state.items, response.articles);
       setState(() {
         state.items = merged;
         state.page = nextPage;
-        state.hasMore = parsed.length >= _pageSize;
+        state.hasMore = response.hasMore && nextPage < _maxPages;
       });
     } catch (e, stack) {
-      final message = formatApiError(e, endpointName: endpointName);
+      final message = "Home tab error: $e";
       setState(() {
         state.error = message;
       });
@@ -192,15 +179,18 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   }
 
   String _articleKey(Article article) {
+    if (article.id != null && article.id!.isNotEmpty) {
+      return article.id!;
+    }
     final link = article.link;
-    if (link != null && link.isNotEmpty) return link;
+    if (link != null && link.isNotEmpty) {
+      final uri = Uri.tryParse(link);
+      if (uri != null) {
+        return "${uri.host.toLowerCase()}${uri.path.toLowerCase()}";
+      }
+      return link;
+    }
     return "${article.title ?? ""}-${article.publishedDate ?? ""}";
-  }
-
-  bool _matchesLanguage(Article article, String language) {
-    final articleLang = article.language?.toLowerCase();
-    if (articleLang == null) return false;
-    return articleLang == language.toLowerCase();
   }
 
   void _openDetail(Article article) {
@@ -271,15 +261,17 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(state.error!),
             ),
-          HeroStoryCard(
-            article: items.first,
-            onTap: () => _openDetail(items.first),
-          ),
-          for (final article in items.skip(1))
-            StoryListRow(
-              article: article,
-              onTap: () => _openDetail(article),
+          if (items.isNotEmpty) ...[
+            HeroStoryCard(
+              article: items.first,
+              onTap: () => _openDetail(items.first),
             ),
+            for (final article in items.skip(1))
+              StoryListRow(
+                article: article,
+                onTap: () => _openDetail(article),
+              ),
+          ],
           PagingFooter(
             isLoading: state.isLoading,
             hasMore: state.hasMore,
