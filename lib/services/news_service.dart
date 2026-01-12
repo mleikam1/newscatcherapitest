@@ -24,6 +24,7 @@ class NewsService {
     bool includeNlp = true,
     String sortBy = "relevancy",
   }) {
+    final includeNlpEnabled = includeNlp || true;
     return _client.post(
       isNews: true,
       path: _search,
@@ -33,7 +34,7 @@ class NewsService {
         "page": page,
         "page_size": pageSize,
         "clustering": clustering,
-        "include_nlp_data": includeNlp,
+        "include_nlp_data": includeNlpEnabled,
         "sort_by": sortBy,
       },
     );
@@ -47,14 +48,17 @@ class NewsService {
     String? countries,
     bool includeNlp = true,
   }) {
+    final includeNlpEnabled = includeNlp || true;
+    final effectiveCountries =
+        (countries != null && countries.isNotEmpty) ? "US" : "US";
     final body = <String, dynamic>{
       "lang": lang,
       "page": page,
       "page_size": pageSize,
-      "include_nlp_data": includeNlp,
+      "include_nlp_data": includeNlpEnabled,
+      "countries": effectiveCountries,
     };
     if (topic != null && topic.isNotEmpty) body["topic"] = topic;
-    if (countries != null && countries.isNotEmpty) body["countries"] = countries;
 
     return _client.post(isNews: true, path: _latest, body: body);
   }
@@ -66,15 +70,16 @@ class NewsService {
     bool includeNlp = true,
     String? countries,
   }) {
+    final includeNlpEnabled = includeNlp || true;
+    final effectiveCountries =
+        (countries != null && countries.isNotEmpty) ? "US" : "US";
     final body = <String, dynamic>{
       "lang": lang,
       "page": page,
       "page_size": pageSize,
-      "include_nlp_data": includeNlp,
+      "include_nlp_data": includeNlpEnabled,
+      "countries": effectiveCountries,
     };
-    if (countries != null && countries.isNotEmpty) {
-      body["countries"] = countries;
-    }
     return _client.post(
       isNews: true,
       path: _breaking,
@@ -88,14 +93,14 @@ class NewsService {
     int page = 1,
     int pageSize = 25,
   }) {
-    final body = <String, dynamic>{
+    final query = <String, String>{
       "lang": lang,
-      "page": page,
-      "page_size": pageSize,
+      "page": "$page",
+      "page_size": "$pageSize",
     };
-    if (q != null && q.isNotEmpty) body["q"] = q;
+    if (q != null && q.isNotEmpty) query["q"] = q;
 
-    return _client.post(isNews: true, path: _authors, body: body);
+    return _client.get(isNews: true, path: _authors, query: query);
   }
 
   Future<ApiResponse> searchSimilar({
@@ -109,6 +114,7 @@ class NewsService {
       "page": page,
       "page_size": pageSize,
       "lang": lang,
+      "include_nlp_data": true,
     };
     if (q != null && q.isNotEmpty) body["q"] = q;
     if (url != null && url.isNotEmpty) body["url"] = url;
@@ -122,14 +128,14 @@ class NewsService {
     int page = 1,
     int pageSize = 50,
   }) {
-    final body = <String, dynamic>{
-      "page": page,
-      "page_size": pageSize,
+    final query = <String, String>{
+      "page": "$page",
+      "page_size": "$pageSize",
     };
-    if (countries != null && countries.isNotEmpty) body["countries"] = countries;
-    if (languages != null && languages.isNotEmpty) body["languages"] = languages;
+    if (countries != null && countries.isNotEmpty) query["countries"] = countries;
+    if (languages != null && languages.isNotEmpty) query["languages"] = languages;
 
-    return _client.post(isNews: true, path: _sources, body: body);
+    return _client.get(isNews: true, path: _sources, query: query);
   }
 
   Future<ApiResponse> aggregationCount({
