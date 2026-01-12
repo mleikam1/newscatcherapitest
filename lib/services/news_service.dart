@@ -45,11 +45,13 @@ class NewsService {
     int pageSize = 25,
     String? topic,
     String? countries,
+    bool includeNlp = true,
   }) {
     final body = <String, dynamic>{
       "lang": lang,
       "page": page,
       "page_size": pageSize,
+      "include_nlp_data": includeNlp,
     };
     if (topic != null && topic.isNotEmpty) body["topic"] = topic;
     if (countries != null && countries.isNotEmpty) body["countries"] = countries;
@@ -61,15 +63,22 @@ class NewsService {
     String lang = "en",
     int page = 1,
     int pageSize = 25,
+    bool includeNlp = true,
+    String? countries,
   }) {
+    final body = <String, dynamic>{
+      "lang": lang,
+      "page": page,
+      "page_size": pageSize,
+      "include_nlp_data": includeNlp,
+    };
+    if (countries != null && countries.isNotEmpty) {
+      body["countries"] = countries;
+    }
     return _client.post(
       isNews: true,
       path: _breaking,
-      body: {
-        "lang": lang,
-        "page": page,
-        "page_size": pageSize,
-      },
+      body: body,
     );
   }
 
