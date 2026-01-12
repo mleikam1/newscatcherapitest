@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/article.dart';
+import '../../services/api_client.dart';
 import '../../services/news_service.dart';
 import '../widgets/article_tile.dart';
 import '../widgets/section_header.dart';
