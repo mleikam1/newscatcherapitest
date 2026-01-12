@@ -15,7 +15,7 @@ class LocalNewsService {
     required double lon,
     int radiusKm = 50,
     int page = 1,
-    int pageSize = 25,
+    int pageSize = 20,
     String lang = "en",
     bool includeNlp = true,
   }) {
@@ -40,7 +40,7 @@ class LocalNewsService {
     required double lon,
     int radiusKm = 50,
     int page = 1,
-    int pageSize = 25,
+    int pageSize = 20,
     String lang = "en",
     bool includeNlp = true,
   }) {
@@ -79,7 +79,20 @@ class LocalNewsService {
     // Local "search by" often supports things like "place", "country", "state", etc.
     // We'll pass raw parameters and show JSON in UI so you can learn what's supported.
     required Map<String, dynamic> payload,
+    required double lat,
+    required double lon,
+    int radiusKm = 50,
+    int page = 1,
+    int pageSize = 20,
   }) {
-    return _client.post(isNews: false, path: _searchBy, body: payload);
+    final body = <String, dynamic>{
+      "lat": lat,
+      "lon": lon,
+      "radius": radiusKm,
+      "page": page,
+      "page_size": pageSize,
+      ...payload,
+    };
+    return _client.post(isNews: false, path: _searchBy, body: body);
   }
 }
