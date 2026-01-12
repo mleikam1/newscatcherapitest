@@ -4,21 +4,43 @@ class LocalNewsService {
   final ApiClient _client;
   LocalNewsService(this._client);
 
-  static const String _search = "/api/search";
-  static const String _latest = "/api/latest_headlines";
-  static const String _sources = "/api/sources";
-  static const String _searchBy = "/api/search_by";
+  static const String _search = "/search";
+  static const String _sources = "/sources";
+  static const String _searchBy = "/search_by";
+  static const int _defaultPageSize = 20;
+
+  void _requireLatLon(double? lat, double? lon) {
+    if (lat == null || lon == null) {
+      throw ArgumentError("lat and lon are required.");
+    }
+  }
+
+  void _requireNonEmpty(String field, String value) {
+    if (value.trim().isEmpty) {
+      throw ArgumentError("$field is required.");
+    }
+  }
+
+  void _requirePositive(String field, int value) {
+    if (value <= 0) {
+      throw ArgumentError("$field must be greater than zero.");
+    }
+  }
 
   Future<ApiResponse> localSearch({
     required String q,
-    required double lat,
-    required double lon,
+    required double? lat,
+    required double? lon,
     int radiusKm = 50,
     int page = 1,
-    int pageSize = 20,
+    int pageSize = _defaultPageSize,
     String lang = "en",
     bool includeNlp = true,
   }) {
+    _requireNonEmpty("q", q);
+    _requireLatLon(lat, lon);
+    _requirePositive("page", page);
+    _requirePositive("page_size", pageSize);
     return _client.post(
       isNews: false,
       path: _search,
@@ -29,31 +51,34 @@ class LocalNewsService {
         "radius": radiusKm,
         "lang": lang,
         "page": page,
-        "page_size": pageSize,
+        "page_size": _defaultPageSize,
         "include_nlp_data": includeNlp,
       },
     );
   }
 
   Future<ApiResponse> localLatestNearMe({
-    required double lat,
-    required double lon,
+    required double? lat,
+    required double? lon,
     int radiusKm = 50,
     int page = 1,
-    int pageSize = 20,
+    int pageSize = _defaultPageSize,
     String lang = "en",
     bool includeNlp = true,
   }) {
+    _requireLatLon(lat, lon);
+    _requirePositive("page", page);
+    _requirePositive("page_size", pageSize);
     return _client.post(
       isNews: false,
-      path: _latest,
+      path: _search,
       body: {
         "lat": lat,
         "lon": lon,
         "radius": radiusKm,
         "lang": lang,
         "page": page,
-        "page_size": pageSize,
+        "page_size": _defaultPageSize,
         "include_nlp_data": includeNlp,
       },
     );
@@ -79,18 +104,21 @@ class LocalNewsService {
     // Local "search by" often supports things like "place", "country", "state", etc.
     // We'll pass raw parameters and show JSON in UI so you can learn what's supported.
     required Map<String, dynamic> payload,
-    required double lat,
-    required double lon,
+    required double? lat,
+    required double? lon,
     int radiusKm = 50,
     int page = 1,
-    int pageSize = 20,
+    int pageSize = _defaultPageSize,
   }) {
+    _requireLatLon(lat, lon);
+    _requirePositive("page", page);
+    _requirePositive("page_size", pageSize);
     final body = <String, dynamic>{
       "lat": lat,
       "lon": lon,
       "radius": radiusKm,
       "page": page,
-      "page_size": pageSize,
+      "page_size": _defaultPageSize,
       ...payload,
     };
     return _client.post(isNews: false, path: _searchBy, body: body);
