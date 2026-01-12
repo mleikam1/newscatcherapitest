@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../../services/local_news_service.dart';
@@ -98,5 +100,3 @@ class _Json {
   const _Json();
   dynamic decode(String input) => json.decode(input);
 }
-
-import 'dart:convert';
