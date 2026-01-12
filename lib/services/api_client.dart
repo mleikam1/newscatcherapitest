@@ -11,6 +11,16 @@ class ApiResponse {
   ApiResponse({required this.status, required this.json, required this.rawBody});
 }
 
+class ApiException implements Exception {
+  final int status;
+  final String body;
+
+  ApiException({required this.status, required this.body});
+
+  @override
+  String toString() => "ApiException(status: $status, body: $body)";
+}
+
 class ApiClient {
   final http.Client _http;
 
@@ -71,13 +81,32 @@ class ApiClient {
   }
 
   ApiResponse _parse(http.Response resp) {
+    if (resp.statusCode != 200) {
+      print("API error: ${resp.statusCode} ${resp.body}");
+    }
     try {
       final decoded = jsonDecode(resp.body);
       if (decoded is Map<String, dynamic>) {
-        return ApiResponse(status: resp.statusCode, json: decoded, rawBody: resp.body);
+        final response =
+            ApiResponse(status: resp.statusCode, json: decoded, rawBody: resp.body);
+        if (resp.statusCode != 200) {
+          throw ApiException(status: resp.statusCode, body: resp.body);
+        }
+        return response;
       }
-      return ApiResponse(status: resp.statusCode, json: {"data": decoded}, rawBody: resp.body);
+      final response = ApiResponse(
+        status: resp.statusCode,
+        json: {"data": decoded},
+        rawBody: resp.body,
+      );
+      if (resp.statusCode != 200) {
+        throw ApiException(status: resp.statusCode, body: resp.body);
+      }
+      return response;
     } catch (_) {
+      if (resp.statusCode != 200) {
+        throw ApiException(status: resp.statusCode, body: resp.body);
+      }
       return ApiResponse(status: resp.statusCode, json: null, rawBody: resp.body);
     }
   }

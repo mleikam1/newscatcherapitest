@@ -6,25 +6,40 @@ class NewsService {
 
   // News API v3 paths (common patterns)
   // If your swagger differs slightly, adjust the path constants here only.
-  static const String _search = "/api/search";
-  static const String _latest = "/api/latest_headlines";
-  static const String _breaking = "/api/breaking_news";
-  static const String _authors = "/api/authors";
-  static const String _similar = "/api/search_similar";
-  static const String _sources = "/api/sources";
-  static const String _agg = "/api/aggregation_count";
-  static const String _subscription = "/api/subscription";
+  static const String _search = "/search";
+  static const String _latest = "/latest_headlines";
+  static const String _breaking = "/breaking_news";
+  static const String _authors = "/authors";
+  static const String _similar = "/search_similar";
+  static const String _sources = "/sources";
+  static const String _agg = "/aggregation_count";
+  static const String _subscription = "/subscription";
+  static const int _defaultPageSize = 20;
+
+  void _requireNonEmpty(String field, String value) {
+    if (value.trim().isEmpty) {
+      throw ArgumentError("$field is required.");
+    }
+  }
+
+  void _requirePositive(String field, int value) {
+    if (value <= 0) {
+      throw ArgumentError("$field must be greater than zero.");
+    }
+  }
 
   Future<ApiResponse> search({
     required String q,
     String lang = "en",
     int page = 1,
-    int pageSize = 25,
+    int pageSize = _defaultPageSize,
     bool clustering = true,
     bool includeNlp = true,
     String sortBy = "relevancy",
   }) {
-    final includeNlpEnabled = includeNlp || true;
+    _requireNonEmpty("q", q);
+    _requirePositive("page", page);
+    _requirePositive("page_size", pageSize);
     return _client.post(
       isNews: true,
       path: _search,
@@ -32,9 +47,9 @@ class NewsService {
         "q": q,
         "lang": lang,
         "page": page,
-        "page_size": pageSize,
+        "page_size": _defaultPageSize,
         "clustering": clustering,
-        "include_nlp_data": includeNlpEnabled,
+        "include_nlp_data": true,
         "sort_by": sortBy,
       },
     );
@@ -43,20 +58,21 @@ class NewsService {
   Future<ApiResponse> latestHeadlines({
     String lang = "en",
     int page = 1,
-    int pageSize = 25,
+    int pageSize = _defaultPageSize,
     String? topic,
     String? countries,
     bool includeNlp = true,
+    String sortBy = "published_at",
   }) {
-    final includeNlpEnabled = includeNlp || true;
-    final effectiveCountries =
-        (countries != null && countries.isNotEmpty) ? "US" : "US";
+    _requirePositive("page", page);
+    _requirePositive("page_size", pageSize);
     final body = <String, dynamic>{
       "lang": lang,
       "page": page,
-      "page_size": pageSize,
-      "include_nlp_data": includeNlpEnabled,
-      "countries": effectiveCountries,
+      "page_size": _defaultPageSize,
+      "include_nlp_data": includeNlp,
+      "countries": "US",
+      "sort_by": sortBy,
     };
     if (topic != null && topic.isNotEmpty) body["topic"] = topic;
 
@@ -66,19 +82,18 @@ class NewsService {
   Future<ApiResponse> breakingNews({
     String lang = "en",
     int page = 1,
-    int pageSize = 25,
+    int pageSize = _defaultPageSize,
     bool includeNlp = true,
     String? countries,
   }) {
-    final includeNlpEnabled = includeNlp || true;
-    final effectiveCountries =
-        (countries != null && countries.isNotEmpty) ? "US" : "US";
+    _requirePositive("page", page);
+    _requirePositive("page_size", pageSize);
     final body = <String, dynamic>{
       "lang": lang,
       "page": page,
-      "page_size": pageSize,
-      "include_nlp_data": includeNlpEnabled,
-      "countries": effectiveCountries,
+      "page_size": _defaultPageSize,
+      "include_nlp_data": includeNlp,
+      "countries": "US",
     };
     return _client.post(
       isNews: true,
