@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/api_client.dart';
+import '../services/content_aggregation_manager.dart';
 import '../services/local_news_service.dart';
 import '../services/news_service.dart';
 import 'screens/home_tab_screen.dart';
@@ -21,6 +22,7 @@ class _AppScaffoldState extends State<AppScaffold> {
   late final ApiClient _client;
   late final NewsService _news;
   late final LocalNewsService _local;
+  late final ContentAggregationManager _aggregation;
 
   int _tabIndex = 0;
   List<String> _smokeTestErrors = [];
@@ -31,6 +33,7 @@ class _AppScaffoldState extends State<AppScaffold> {
     _client = ApiClient();
     _news = NewsService(_client);
     _local = LocalNewsService(_client);
+    _aggregation = ContentAggregationManager(_news);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _runSmokeTests();
     });
@@ -47,8 +50,11 @@ class _AppScaffoldState extends State<AppScaffold> {
     try {
       await _news.latestHeadlines(
         countries: "US",
+        lang: "en",
         page: 1,
         pageSize: 1,
+        sortBy: "published_date",
+        order: "desc",
       );
     } catch (e) {
       errors.add(formatApiError(e, endpointName: "news.latest_headlines"));
@@ -119,7 +125,7 @@ class _AppScaffoldState extends State<AppScaffold> {
             child: IndexedStack(
               index: _tabIndex,
               children: [
-                HomeTabScreen(news: _news),
+                HomeTabScreen(aggregation: _aggregation),
                 LocalTabScreen(local: _local),
                 SearchTabScreen(news: _news),
               ],

@@ -49,6 +49,9 @@ class NewsService {
     String lang = _defaultLanguage,
     int page = 1,
     int pageSize = _defaultPageSize,
+    String? topic,
+    String? sortBy,
+    String? order,
   }) {
     _requireNonEmpty("q", q);
     _requirePositive("page", page);
@@ -60,6 +63,9 @@ class NewsService {
       "page_size": "$pageSize",
       "page": "$page",
     };
+    if (topic != null && topic.isNotEmpty) query["topic"] = topic;
+    if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
+    if (order != null && order.isNotEmpty) query["order"] = order;
     return _client
         .get(
           isNews: true,
@@ -75,6 +81,8 @@ class NewsService {
     int pageSize = _defaultPageSize,
     String? countries,
     String lang = _defaultLanguage,
+    String? sortBy,
+    String? order,
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
@@ -84,6 +92,8 @@ class NewsService {
       "page_size": "$pageSize",
       "page": "$page",
     };
+    if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
+    if (order != null && order.isNotEmpty) query["order"] = order;
     return _client
         .get(
           isNews: true,
@@ -97,11 +107,15 @@ class NewsService {
   Future<ApiResponse> breakingNews({
     String? countries,
     String lang = _defaultLanguage,
+    String? sortBy,
+    String? order,
   }) {
     final query = <String, String>{
       "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
       "lang": lang,
     };
+    if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
+    if (order != null && order.isNotEmpty) query["order"] = order;
     return _client
         .get(
           isNews: true,

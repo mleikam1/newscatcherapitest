@@ -15,6 +15,7 @@ class HeroStoryCard extends StatelessWidget {
     final imageUrl = article.media ?? "";
     final title = article.title ?? "(untitled)";
     final logoUrl = publisherLogoUrl(article);
+    final isBreaking = article.isBreakingNews;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -69,6 +70,12 @@ class HeroStoryCard extends StatelessWidget {
                     left: 12,
                     child: _PublisherBadge(logoUrl: logoUrl),
                   ),
+                  if (isBreaking)
+                    Positioned(
+                      top: 12,
+                      right: 12,
+                      child: _BreakingBadge(),
+                    ),
                 ],
               ),
             ),
@@ -83,6 +90,27 @@ class HeroStoryCard extends StatelessWidget {
       color: Theme.of(context).colorScheme.surfaceVariant,
       child: const Center(
         child: Icon(Icons.photo, size: 48, color: Colors.black45),
+      ),
+    );
+  }
+}
+
+class _BreakingBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.red.shade700,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Text(
+        "BREAKING",
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w700,
+          fontSize: 11,
+        ),
       ),
     );
   }

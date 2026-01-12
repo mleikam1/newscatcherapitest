@@ -16,6 +16,7 @@ class StoryListRow extends StatelessWidget {
     final logoUrl = publisherLogoUrl(article);
     final time = formatPublishedDate(context, article.publishedDate);
     final thumbnailUrl = article.media ?? "";
+    final isBreaking = article.isBreakingNews;
 
     return InkWell(
       onTap: onTap,
@@ -34,6 +35,10 @@ class StoryListRow extends StatelessWidget {
                     displayPublisher(article),
                     style: Theme.of(context).textTheme.labelMedium,
                   ),
+                  if (isBreaking) ...[
+                    const SizedBox(height: 4),
+                    _BreakingPill(),
+                  ],
                   const SizedBox(height: 6),
                   Text(
                     title,
@@ -77,6 +82,28 @@ class StoryListRow extends StatelessWidget {
       width: 72,
       height: 72,
       child: const Icon(Icons.image, color: Colors.black45, size: 24),
+    );
+  }
+}
+
+class _BreakingPill extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.red.shade700,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Text(
+        "BREAKING",
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+        ),
+      ),
     );
   }
 }

@@ -2,21 +2,35 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/article.dart';
+import '../../services/article_summary_service.dart';
 import '../screens/article_webview_screen.dart';
 import '../widgets/story_utils.dart';
 
-class ArticleDetailScreen extends StatelessWidget {
+class ArticleDetailScreen extends StatefulWidget {
   final Article article;
 
   const ArticleDetailScreen({super.key, required this.article});
 
   @override
+  State<ArticleDetailScreen> createState() => _ArticleDetailScreenState();
+}
+
+class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
+  late Future<List<String>> _summaryFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _summaryFuture = ArticleSummaryService.instance.getSummary(widget.article);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final article = widget.article;
     final imageUrl = article.media ?? "";
     final title = article.title ?? "(untitled)";
     final logoUrl = publisherLogoUrl(article);
     final publisher = displayPublisher(article);
-    final summary = fallbackSummary(article);
     final link = article.link ?? "";
 
     return Scaffold(
@@ -70,12 +84,42 @@ class ArticleDetailScreen extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: Text(
-              summary,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
+          FutureBuilder<List<String>>(
+            future: _summaryFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  child: LinearProgressIndicator(),
+                );
+              }
+              final bullets = snapshot.data ?? const [];
+              if (bullets.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                  child: Text(
+                    "Summary unavailable for this story.",
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                );
+              }
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final bullet in bullets)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text(
+                          "• $bullet",
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),

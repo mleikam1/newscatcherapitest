@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../app_state.dart';
 import '../../models/article.dart';
 import '../../services/api_client.dart';
+import '../../services/article_filter.dart';
 import '../../services/news_service.dart';
 import 'article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
@@ -26,7 +27,8 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  static const int _pageSize = 20;
+  static const int _pageSize = 30;
+  static const int _maxPages = 3;
 
   List<Article> _results = [];
   int _page = 0;
@@ -34,7 +36,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   bool _hasMore = true;
   String? _error;
   String? _query;
-  String _language = "en";
+  String _language = ArticleFilter.requiredLanguage;
 
   bool get _hasSearched => _query != null && _query!.isNotEmpty;
 
@@ -42,7 +44,10 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final appState = context.watch<AppState>();
-    _language = appState.selectedLanguage;
+    _language = ArticleFilter.requiredLanguage;
+    if (appState.selectedLanguage != _language) {
+      debugPrint("Search language overridden to ${ArticleFilter.requiredLanguage}.");
+    }
   }
 
   @override
@@ -81,6 +86,12 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     if (query == null || query.isEmpty) return;
 
     final nextPage = reset ? 1 : _page + 1;
+    if (nextPage > _maxPages) {
+      setState(() {
+        _hasMore = false;
+      });
+      return;
+    }
     setState(() {
       _isLoading = true;
       _error = null;
@@ -89,10 +100,12 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     try {
       final ApiResponse response = await widget.news.search(
         q: query,
-        countries: "US",
+        countries: ArticleFilter.requiredCountry,
         lang: _language,
         page: nextPage,
         pageSize: _pageSize,
+        sortBy: "published_date",
+        order: "desc",
       );
       final errorMessage = extractApiMessage(response);
       if (errorMessage != null) {
@@ -107,13 +120,17 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
       final parsed = rawArticles
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
-          .where((article) => _matchesLanguage(article, _language))
           .toList();
-      final merged = _mergeUnique(_results, parsed);
+      final filtered = ArticleFilter.filterAndSort(
+        parsed,
+        maxAge: ArticleFilter.globalMaxAge,
+        context: "search",
+      );
+      final merged = _mergeUnique(_results, filtered);
       setState(() {
         _results = merged;
         _page = nextPage;
-        _hasMore = parsed.length >= _pageSize;
+        _hasMore = filtered.length >= _pageSize && nextPage < _maxPages;
       });
     } catch (e, stack) {
       final message = formatApiError(e, endpointName: "news.search");
@@ -137,15 +154,18 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   }
 
   String _articleKey(Article article) {
+    if (article.id != null && article.id!.isNotEmpty) {
+      return article.id!;
+    }
     final link = article.link;
-    if (link != null && link.isNotEmpty) return link;
+    if (link != null && link.isNotEmpty) {
+      final uri = Uri.tryParse(link);
+      if (uri != null) {
+        return "${uri.host.toLowerCase()}${uri.path.toLowerCase()}";
+      }
+      return link;
+    }
     return "${article.title ?? ""}-${article.publishedDate ?? ""}";
-  }
-
-  bool _matchesLanguage(Article article, String language) {
-    final articleLang = article.language?.toLowerCase();
-    if (articleLang == null) return false;
-    return articleLang == language.toLowerCase();
   }
 
   void _openDetail(Article article) {
@@ -258,15 +278,17 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     return ListView(
       padding: const EdgeInsets.only(top: 8),
       children: [
-        HeroStoryCard(
-          article: _results.first,
-          onTap: () => _openDetail(_results.first),
-        ),
-        for (final article in _results.skip(1))
-          StoryListRow(
-            article: article,
-            onTap: () => _openDetail(article),
+        if (_results.isNotEmpty) ...[
+          HeroStoryCard(
+            article: _results.first,
+            onTap: () => _openDetail(_results.first),
           ),
+          for (final article in _results.skip(1))
+            StoryListRow(
+              article: article,
+              onTap: () => _openDetail(article),
+            ),
+        ],
         PagingFooter(
           isLoading: _isLoading,
           hasMore: _hasMore,

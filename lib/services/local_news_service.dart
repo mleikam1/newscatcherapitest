@@ -7,7 +7,7 @@ class LocalNewsService {
   static const String _localNews = "/local-news";
   static const String _sources = "/sources";
   static const String _searchBy = "/search_by";
-  static const int _defaultPageSize = 20;
+  static const int _defaultPageSize = 30;
 
   void _requirePositive(String field, int value) {
     if (value <= 0) {
@@ -33,8 +33,9 @@ class LocalNewsService {
     String? state,
     double? latitude,
     double? longitude,
-    int radiusKm = 50,
+    int radiusMiles = 30,
     String? language,
+    String country = "US",
     int page = 1,
     int pageSize = _defaultPageSize,
   }) {
@@ -43,11 +44,12 @@ class LocalNewsService {
     final body = <String, dynamic>{
       "page": page,
       "page_size": pageSize,
+      "country": country,
     };
     if (latitude != null && longitude != null) {
       body["lat"] = latitude;
       body["lon"] = longitude;
-      body["radius_km"] = radiusKm;
+      body["radius_km"] = _toKm(radiusMiles);
     }
     if (city != null && city.trim().isNotEmpty) {
       body["city"] = city.trim();
@@ -66,6 +68,10 @@ class LocalNewsService {
           body: body,
         )
         .then(_requireArticles);
+  }
+
+  int _toKm(int miles) {
+    return (miles * 1.60934).round();
   }
 
   Future<ApiResponse> localLatestNearMe({
