@@ -83,39 +83,23 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     });
 
     try {
-      var response = await widget.news.breakingNews(
-        page: nextPage,
-        pageSize: 10,
-      );
+      final response = await widget.news.breakingNews();
       if (response.status != 200) {
         debugPrint(
           "Breaking news non-200 response: ${response.status} ${response.rawBody}",
         );
       }
-      var rawArticles =
+      final rawArticles =
           (response.json?["articles"] as List<dynamic>?) ?? const [];
-      var parsed = rawArticles
+      final parsed = rawArticles
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
           .toList();
-      if (parsed.isEmpty) {
-        debugPrint("Breaking news empty. Retrying with fallback search.");
-        response = await widget.news.breakingNewsFallback(
-          page: nextPage,
-          pageSize: 10,
-        );
-        rawArticles =
-            (response.json?["articles"] as List<dynamic>?) ?? const [];
-        parsed = rawArticles
-            .whereType<Map<String, dynamic>>()
-            .map(Article.fromJson)
-            .toList();
-      }
       final merged = _mergeUnique(state.items, parsed);
       setState(() {
         state.items = merged;
         state.page = nextPage;
-        state.hasMore = parsed.length >= 10;
+        state.hasMore = false;
       });
     } catch (e, stack) {
       final message = formatApiError(e, endpointName: "news.breaking_news");

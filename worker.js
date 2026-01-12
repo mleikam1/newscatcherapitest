@@ -1,4 +1,4 @@
-const NEWS_API_BASE = "https://v3-api.newscatcherapi.com/api";
+const NEWS_API_BASE = "https://api.newscatcherapi.com/v3";
 const US_COUNTRY = "US";
 
 const FORBIDDEN_PARAMS = new Set(["location", "lat", "lon", "geo"]);
@@ -71,7 +71,7 @@ function normalizeApiPath(path) {
   } else if (normalized === "/api") {
     normalized = "";
   }
-  return `/api${normalized}`;
+  return normalized;
 }
 
 function removeForbiddenParams(params) {
@@ -79,15 +79,6 @@ function removeForbiddenParams(params) {
     if (FORBIDDEN_PARAMS.has(key)) {
       params.delete(key);
     }
-  }
-}
-
-function enforceUsCountry(params) {
-  if (params.has("country")) {
-    params.set("country", US_COUNTRY);
-  }
-  if (params.has("countries")) {
-    params.set("countries", US_COUNTRY);
   }
 }
 
@@ -103,25 +94,47 @@ function buildLocalQuery({ city, state }) {
   const trimmedCity = city?.trim();
   const normalizedState = normalizeState(state);
   if (trimmedCity && normalizedState) {
-    return `${trimmedCity} OR ${normalizedState}`;
+    return `"${trimmedCity}" OR "${normalizedState}"`;
   }
-  if (trimmedCity) return trimmedCity;
-  if (normalizedState) return normalizedState;
+  if (trimmedCity) return `"${trimmedCity}"`;
+  if (normalizedState) return `"${normalizedState}" local news`;
   return "local news";
 }
 
-function filterUsArticles(payload) {
-  if (!payload || !Array.isArray(payload.articles)) return payload;
-  const kept = [];
-  for (const article of payload.articles) {
+function filterUSArticles(articles) {
+  if (!Array.isArray(articles)) return [];
+  return articles.filter((article) => {
     const country = article?.country?.toString().toUpperCase();
-    if (country === US_COUNTRY) {
-      kept.push(article);
-    } else {
-      console.log(`Dropping non-US article: ${article?.link ?? "unknown"}`);
-    }
+    if (country === US_COUNTRY) return true;
+    console.log(`Dropping non-US article: ${article?.link ?? "unknown"}`);
+    return false;
+  });
+}
+
+function withUsArticles(payload) {
+  if (!payload || !Array.isArray(payload.articles)) return payload;
+  return { ...payload, articles: filterUSArticles(payload.articles) };
+}
+
+function sanitizeParams(params) {
+  const sanitized = {};
+  for (const [key, value] of params.entries()) {
+    if (FORBIDDEN_PARAMS.has(key)) continue;
+    sanitized[key] = value;
   }
-  return { ...payload, articles: kept };
+  return sanitized;
+}
+
+function logUpstreamFailure({ endpoint, params, status, body }) {
+  console.log(
+    JSON.stringify({
+      message: "Upstream failure",
+      endpoint,
+      params,
+      status,
+      body,
+    }),
+  );
 }
 
 async function fetchNewsApi({ env, path, query, body }) {
@@ -135,15 +148,16 @@ async function fetchNewsApi({ env, path, query, body }) {
   }
 
   const upstreamUrl = new URL(NEWS_API_BASE);
-  upstreamUrl.pathname = normalizeApiPath(path);
+  upstreamUrl.pathname = path.startsWith("/")
+    ? path
+    : normalizeApiPath(path);
 
   const params = new URLSearchParams(query ?? undefined);
   removeForbiddenParams(params);
-  enforceUsCountry(params);
   upstreamUrl.search = params.toString();
 
   const headers = new Headers({
-    "x-api-token": token,
+    "x-api-key": token,
     accept: "application/json",
     "content-type": "application/json",
   });
@@ -159,8 +173,6 @@ async function fetchNewsApi({ env, path, query, body }) {
         delete sanitizedBody[key];
       }
     }
-    if (sanitizedBody.country) sanitizedBody.country = US_COUNTRY;
-    if (sanitizedBody.countries) sanitizedBody.countries = US_COUNTRY;
     init.body = JSON.stringify(sanitizedBody);
   }
 
@@ -172,29 +184,38 @@ async function fetchNewsApi({ env, path, query, body }) {
 
   if (upstreamResponse.status !== 200) {
     const upstreamBody = await upstreamResponse.text();
-    console.log(`Upstream error body: ${upstreamBody}`);
+    logUpstreamFailure({
+      endpoint: path,
+      params: sanitizeParams(params),
+      status: upstreamResponse.status,
+      body: upstreamBody,
+    });
     return jsonResponse(
       {
-        upstream_status: upstreamResponse.status,
-        upstream_body: upstreamBody,
-        upstream_url: upstreamUrl.toString(),
+        articles: [],
+        error: "Upstream unavailable",
       },
-      upstreamResponse.status,
+      200,
     );
   }
 
   try {
     const payload = await upstreamResponse.json();
-    return jsonResponse(filterUsArticles(payload), 200);
+    return jsonResponse(withUsArticles(payload), 200);
   } catch (error) {
     const bodyText = await upstreamResponse.text();
+    logUpstreamFailure({
+      endpoint: path,
+      params: sanitizeParams(params),
+      status: upstreamResponse.status,
+      body: bodyText,
+    });
     return jsonResponse(
       {
-        error: `JSON parse error: ${error}`,
-        upstream_body: bodyText,
-        upstream_url: upstreamUrl.toString(),
+        articles: [],
+        error: "Upstream unavailable",
       },
-      500,
+      200,
     );
   }
 }
@@ -214,7 +235,7 @@ async function handleHealth(env) {
   const upstreamResponse = await fetch(upstreamUrl, {
     method: "GET",
     headers: {
-      "x-api-token": token,
+      "x-api-key": token,
       accept: "application/json",
     },
   });
@@ -224,13 +245,18 @@ async function handleHealth(env) {
   if (upstreamResponse.status !== 200) {
     const upstreamBody = await upstreamResponse.text();
     console.log(`Health upstream error body: ${upstreamBody}`);
+    logUpstreamFailure({
+      endpoint: "/subscription",
+      params: {},
+      status: upstreamResponse.status,
+      body: upstreamBody,
+    });
     return jsonResponse(
       {
-        upstream_status: upstreamResponse.status,
-        upstream_body: upstreamBody,
-        upstream_url: upstreamUrl,
+        articles: [],
+        error: "Upstream unavailable",
       },
-      upstreamResponse.status,
+      200,
     );
   }
 
@@ -239,13 +265,18 @@ async function handleHealth(env) {
     return jsonResponse(data, 200);
   } catch (error) {
     const body = await upstreamResponse.text();
+    logUpstreamFailure({
+      endpoint: "/subscription",
+      params: {},
+      status: upstreamResponse.status,
+      body,
+    });
     return jsonResponse(
       {
-        error: `Health JSON parse error: ${error}`,
-        upstream_body: body,
-        upstream_url: upstreamUrl,
+        articles: [],
+        error: "Upstream unavailable",
       },
-      500,
+      200,
     );
   }
 }
@@ -271,38 +302,22 @@ async function handleLocalNews(request, env) {
     path: "/search",
     query: {
       q,
-      country: US_COUNTRY,
       lang: "en",
       page_size: String(Number.isFinite(pageSize) ? pageSize : 20),
       page: String(Number.isFinite(page) ? page : 1),
-      sort_by: "relevancy",
     },
   });
 }
 
 async function handleBreakingNews(request, env) {
-  const url = new URL(request.url);
-  const pageSize = Number(url.searchParams.get("page_size") ?? 10);
-  const page = Number(url.searchParams.get("page") ?? 1);
-
   const primaryResponse = await fetchNewsApi({
     env,
-    path: "/latest_headlines",
-    query: {
-      topic: "breaking-news",
-      country: US_COUNTRY,
-      page_size: String(Number.isFinite(pageSize) ? pageSize : 10),
-      page: String(Number.isFinite(page) ? page : 1),
-    },
+    path: "/breaking-news",
   });
 
-  if (primaryResponse.status !== 200) {
-    return primaryResponse;
-  }
-
   const primaryPayload = await primaryResponse.clone().json();
-  const articles = primaryPayload?.articles ?? [];
-  if (Array.isArray(articles) && articles.length > 0) {
+  const articles = filterUSArticles(primaryPayload?.articles ?? []);
+  if (articles.length > 0) {
     return primaryResponse;
   }
 
@@ -312,10 +327,8 @@ async function handleBreakingNews(request, env) {
     path: "/search",
     query: {
       q: "breaking news",
-      country: US_COUNTRY,
       sort_by: "published_date",
-      page_size: String(Number.isFinite(pageSize) ? pageSize : 10),
-      page: String(Number.isFinite(page) ? page : 1),
+      page_size: "10",
       lang: "en",
     },
   });
@@ -329,7 +342,6 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
 
   const params = new URLSearchParams(url.search);
   removeForbiddenParams(params);
-  enforceUsCountry(params);
   upstreamUrl.search = params.toString();
 
   const token = env.NEWS_API_TOKEN;
@@ -342,7 +354,7 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
   }
 
   const headers = new Headers(request.headers);
-  headers.set("x-api-token", token);
+  headers.set("x-api-key", token);
   headers.delete("host");
 
   const init = {
@@ -366,8 +378,6 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
           delete body[key];
         }
       }
-      if (body.country) body.country = US_COUNTRY;
-      if (body.countries) body.countries = US_COUNTRY;
       init.body = JSON.stringify(body);
       headers.set("content-type", "application/json");
     } else {
@@ -383,29 +393,38 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
 
   if (upstreamResponse.status !== 200) {
     const upstreamBody = await upstreamResponse.text();
-    console.log(`Upstream error body: ${upstreamBody}`);
+    logUpstreamFailure({
+      endpoint: pathSuffix,
+      params: sanitizeParams(params),
+      status: upstreamResponse.status,
+      body: upstreamBody,
+    });
     return jsonResponse(
       {
-        upstream_status: upstreamResponse.status,
-        upstream_body: upstreamBody,
-        upstream_url: upstreamUrl.toString(),
+        articles: [],
+        error: "Upstream unavailable",
       },
-      upstreamResponse.status,
+      200,
     );
   }
 
   try {
     const payload = await upstreamResponse.json();
-    return jsonResponse(filterUsArticles(payload), 200);
+    return jsonResponse(withUsArticles(payload), 200);
   } catch (error) {
     const bodyText = await upstreamResponse.text();
+    logUpstreamFailure({
+      endpoint: pathSuffix,
+      params: sanitizeParams(params),
+      status: upstreamResponse.status,
+      body: bodyText,
+    });
     return jsonResponse(
       {
-        error: `JSON parse error: ${error}`,
-        upstream_body: bodyText,
-        upstream_url: upstreamUrl.toString(),
+        articles: [],
+        error: "Upstream unavailable",
       },
-      500,
+      200,
     );
   }
 }

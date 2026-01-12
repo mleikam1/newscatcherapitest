@@ -89,46 +89,12 @@ class NewsService {
         .then(_requireArticles);
   }
 
-  Future<ApiResponse> breakingNews({
-    int page = 1,
-    int pageSize = 10,
-  }) {
-    _requirePositive("page", page);
-    _requirePositive("page_size", pageSize);
-    final query = <String, String>{
-      "page_size": "$pageSize",
-      "page": "$page",
-    };
+  Future<ApiResponse> breakingNews() {
     return _client
         .get(
           isNews: true,
           path: _breaking,
           endpointName: "news.breaking_news",
-          query: query,
-        )
-        .then(_requireArticles);
-  }
-
-  Future<ApiResponse> breakingNewsFallback({
-    int page = 1,
-    int pageSize = 10,
-  }) {
-    _requirePositive("page", page);
-    _requirePositive("page_size", pageSize);
-    final query = <String, String>{
-      "q": "breaking news",
-      "country": _defaultCountry,
-      "lang": "en",
-      "sort_by": "published_date",
-      "page_size": "$pageSize",
-      "page": "$page",
-    };
-    return _client
-        .get(
-          isNews: true,
-          path: _search,
-          endpointName: "news.breaking_news_fallback",
-          query: query,
         )
         .then(_requireArticles);
   }
