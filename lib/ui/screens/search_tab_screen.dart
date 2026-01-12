@@ -87,7 +87,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     } catch (e, stack) {
       final message = formatApiError(e, endpointName: "news.search");
       setState(() => _error = message);
-      Error.throwWithStackTrace(Exception(message), stack);
+      debugPrint("Search error: $message\n$stack");
     } finally {
       setState(() => _isLoading = false);
     }
@@ -205,11 +205,44 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     }
 
     if (_error != null) {
-      return Center(child: Text(_error!));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _error!,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _hasSearched ? () => _loadMore(reset: true) : null,
+                child: const Text("Retry"),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     if (_results.isEmpty) {
-      return const Center(child: Text("No results yet."));
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("No results yet."),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _hasSearched ? () => _loadMore(reset: true) : null,
+                child: const Text("Retry"),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return ListView(

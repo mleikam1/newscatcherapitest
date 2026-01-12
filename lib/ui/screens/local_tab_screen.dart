@@ -25,30 +25,27 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
   final _section = _SectionState();
   static const int _pageSize = 20;
 
-  double? _lastLat;
-  double? _lastLon;
+  String? _locationQuery;
+  String? _countryCode;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final appState = context.watch<AppState>();
-    final lat = appState.latitude;
-    final lon = appState.longitude;
-    if (appState.locationPermissionGranted && lat != null && lon != null) {
-      if (lat != _lastLat || lon != _lastLon) {
-        _lastLat = lat;
-        _lastLon = lon;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _loadLocalNews(loadMore: false);
-        });
-      }
+    final locale = Localizations.localeOf(context);
+    final location = _resolveLocationQuery(locale);
+    if (location != _locationQuery || locale.countryCode != _countryCode) {
+      _locationQuery = location;
+      _countryCode = locale.countryCode;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loadLocalNews(loadMore: false);
+      });
     }
   }
 
   Future<void> _loadLocalNews({required bool loadMore}) async {
     if (_section.isLoading) return;
     if (loadMore && !_section.hasMore) return;
-    if (_lastLat == null || _lastLon == null) return;
+    if (_locationQuery == null || _locationQuery!.isEmpty) return;
 
     final nextPage = loadMore ? _section.page + 1 : 1;
     setState(() {
@@ -63,8 +60,8 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
 
     try {
       final response = await widget.local.localLatestNearMe(
-        lat: _lastLat!,
-        lon: _lastLon!,
+        location: _locationQuery,
+        countries: _countryCode == null ? null : [_countryCode!],
         pageSize: _pageSize,
       );
       final rawArticles =
@@ -84,7 +81,7 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
       setState(() {
         _section.error = message;
       });
-      Error.throwWithStackTrace(Exception(message), stack);
+      debugPrint("Local news error: $message\n$stack");
     } finally {
       setState(() => _section.isLoading = false);
     }
@@ -119,21 +116,32 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    if (!appState.locationPermissionGranted ||
-        appState.latitude == null ||
-        appState.longitude == null) {
-      return _buildLocationEmptyState(appState);
-    }
+    final locationLabel = _locationQuery ?? "Local News";
 
     return ListView(
       children: [
         SectionHeader(
-          title: "Local News • Near You",
+          title: "Local News • $locationLabel",
         ),
+        if (!appState.locationPermissionGranted)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(appState.locationStatus),
+          ),
         if (_section.error != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(_section.error!),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(_section.error!),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: () => _loadLocalNews(loadMore: false),
+                  child: const Text("Retry"),
+                ),
+              ],
+            ),
           ),
         if (_section.items.isEmpty && _section.isLoading)
           const Padding(
@@ -141,9 +149,19 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
             child: Center(child: CircularProgressIndicator()),
           )
         else if (_section.items.isEmpty && _section.error == null)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Text("No local stories yet."),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("No local stories yet."),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: () => _loadLocalNews(loadMore: false),
+                  child: const Text("Retry"),
+                ),
+              ],
+            ),
           )
         else ...[
           HeroStoryCard(
@@ -165,34 +183,20 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     );
   }
 
-  Widget _buildLocationEmptyState(AppState appState) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.place_outlined, size: 48),
-            const SizedBox(height: 12),
-            Text(
-              "Enable location to see nearby headlines.",
-              style: Theme.of(context).textTheme.titleMedium,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              appState.locationStatus,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => appState.initLocation(),
-              child: const Text("Enable location"),
-            ),
-          ],
-        ),
-      ),
-    );
+  String _resolveLocationQuery(Locale locale) {
+    const fallback = "United States";
+    final code = locale.countryCode?.toUpperCase();
+    if (code == null) return fallback;
+    const countryNames = {
+      "US": "United States",
+      "CA": "Canada",
+      "GB": "United Kingdom",
+      "AU": "Australia",
+      "NZ": "New Zealand",
+      "IE": "Ireland",
+      "IN": "India",
+    };
+    return countryNames[code] ?? code;
   }
 }
 
