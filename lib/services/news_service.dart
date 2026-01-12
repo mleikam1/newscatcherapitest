@@ -15,6 +15,8 @@ class NewsService {
   static const String _agg = "/aggregation_count";
   static const String _subscription = "/subscription";
   static const int _defaultPageSize = 20;
+  static const String _defaultCountry = "US";
+  static const String _defaultSortBy = "published_at";
 
   void _requireNonEmpty(String field, String value) {
     if (value.trim().isEmpty) {
@@ -26,6 +28,15 @@ class NewsService {
     if (value <= 0) {
       throw ArgumentError("$field must be greater than zero.");
     }
+  }
+
+  ApiResponse _requireArticles(ApiResponse response) {
+    final json = response.json;
+    if (json == null || !json.containsKey("articles")) {
+      print("API response missing articles: ${response.rawBody}");
+      throw StateError("Response missing required 'articles' field.");
+    }
+    return response;
   }
 
   Future<ApiResponse> search({
@@ -40,19 +51,12 @@ class NewsService {
     _requireNonEmpty("q", q);
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
-    return _client.post(
-      isNews: true,
-      path: _search,
-      body: {
-        "q": q,
-        "lang": lang,
-        "page": page,
-        "page_size": _defaultPageSize,
-        "clustering": clustering,
-        "include_nlp_data": true,
-        "sort_by": sortBy,
-      },
-    );
+    final query = <String, String>{
+      "q": q,
+      "page_size": "$_defaultPageSize",
+      "include_nlp_data": "true",
+    };
+    return _client.get(isNews: true, path: _search, query: query).then(_requireArticles);
   }
 
   Future<ApiResponse> latestHeadlines({
@@ -62,21 +66,18 @@ class NewsService {
     String? topic,
     String? countries,
     bool includeNlp = true,
-    String sortBy = "published_at",
+    String? sortBy = _defaultSortBy,
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
-    final body = <String, dynamic>{
-      "lang": lang,
-      "page": page,
-      "page_size": _defaultPageSize,
-      "include_nlp_data": includeNlp,
-      "countries": "US",
-      "sort_by": sortBy,
+    final query = <String, String>{
+      "countries": _defaultCountry,
+      "page_size": "$_defaultPageSize",
     };
-    if (topic != null && topic.isNotEmpty) body["topic"] = topic;
-
-    return _client.post(isNews: true, path: _latest, body: body);
+    if (sortBy != null && sortBy.isNotEmpty) {
+      query["sort_by"] = sortBy;
+    }
+    return _client.get(isNews: true, path: _latest, query: query).then(_requireArticles);
   }
 
   Future<ApiResponse> breakingNews({
@@ -88,18 +89,11 @@ class NewsService {
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
-    final body = <String, dynamic>{
-      "lang": lang,
-      "page": page,
-      "page_size": _defaultPageSize,
-      "include_nlp_data": includeNlp,
-      "countries": "US",
+    final query = <String, String>{
+      "countries": _defaultCountry,
+      "page_size": "$_defaultPageSize",
     };
-    return _client.post(
-      isNews: true,
-      path: _breaking,
-      body: body,
-    );
+    return _client.get(isNews: true, path: _breaking, query: query).then(_requireArticles);
   }
 
   Future<ApiResponse> authors({

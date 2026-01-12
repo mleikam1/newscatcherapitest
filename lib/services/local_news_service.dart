@@ -8,6 +8,7 @@ class LocalNewsService {
   static const String _sources = "/sources";
   static const String _searchBy = "/search_by";
   static const int _defaultPageSize = 20;
+  static const int _defaultRadiusKm = 50;
 
   void _requireLatLon(double? lat, double? lon) {
     if (lat == null || lon == null) {
@@ -27,6 +28,15 @@ class LocalNewsService {
     }
   }
 
+  ApiResponse _requireArticles(ApiResponse response) {
+    final json = response.json;
+    if (json == null || !json.containsKey("articles")) {
+      print("API response missing articles: ${response.rawBody}");
+      throw StateError("Response missing required 'articles' field.");
+    }
+    return response;
+  }
+
   Future<ApiResponse> localSearch({
     required String q,
     required double? lat,
@@ -41,20 +51,19 @@ class LocalNewsService {
     _requireLatLon(lat, lon);
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
-    return _client.post(
-      isNews: false,
-      path: _search,
-      body: {
-        "q": q,
-        "lat": lat,
-        "lon": lon,
-        "radius": radiusKm,
-        "lang": lang,
-        "page": page,
-        "page_size": _defaultPageSize,
-        "include_nlp_data": includeNlp,
-      },
-    );
+    return _client
+        .post(
+          isNews: false,
+          path: _search,
+          body: {
+            "q": q,
+            "lat": lat,
+            "lon": lon,
+            "radius": _defaultRadiusKm,
+            "page_size": _defaultPageSize,
+          },
+        )
+        .then(_requireArticles);
   }
 
   Future<ApiResponse> localLatestNearMe({
@@ -69,19 +78,18 @@ class LocalNewsService {
     _requireLatLon(lat, lon);
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
-    return _client.post(
-      isNews: false,
-      path: _search,
-      body: {
-        "lat": lat,
-        "lon": lon,
-        "radius": radiusKm,
-        "lang": lang,
-        "page": page,
-        "page_size": _defaultPageSize,
-        "include_nlp_data": includeNlp,
-      },
-    );
+    return _client
+        .post(
+          isNews: false,
+          path: _search,
+          body: {
+            "lat": lat,
+            "lon": lon,
+            "radius": _defaultRadiusKm,
+            "page_size": _defaultPageSize,
+          },
+        )
+        .then(_requireArticles);
   }
 
   Future<ApiResponse> localSources({
@@ -116,8 +124,7 @@ class LocalNewsService {
     final body = <String, dynamic>{
       "lat": lat,
       "lon": lon,
-      "radius": radiusKm,
-      "page": page,
+      "radius": _defaultRadiusKm,
       "page_size": _defaultPageSize,
       ...payload,
     };
