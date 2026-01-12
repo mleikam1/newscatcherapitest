@@ -62,7 +62,6 @@ class ApiDiagnostics extends ChangeNotifier {
     lastQueryParams = query == null ? null : jsonEncode(query);
     lastRequestBody = body;
     lastErrorMessage = null;
-    notifyListeners();
   }
 
   void recordResponse({
@@ -192,12 +191,19 @@ class ApiClient {
     if (resp.body.trim().isEmpty) {
       final message = "Empty response body.";
       _diagnostics.recordError(message, status: resp.statusCode);
-      throw ApiRequestException(
-        method: method,
-        url: url,
-        endpointName: endpointName,
+      return ApiResponse(
         status: resp.statusCode,
-        body: message,
+        json: const {"articles": <dynamic>[]},
+        rawBody: resp.body,
+      );
+    }
+    if (resp.statusCode == 403 || resp.statusCode >= 500) {
+      final message = _truncate(resp.body);
+      _diagnostics.recordError(message, status: resp.statusCode);
+      return ApiResponse(
+        status: resp.statusCode,
+        json: const {"articles": <dynamic>[]},
+        rawBody: resp.body,
       );
     }
     if (resp.statusCode != 200) {

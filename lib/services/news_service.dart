@@ -33,7 +33,11 @@ class NewsService {
     final json = response.json;
     if (json == null || !json.containsKey("articles")) {
       print("API response missing articles: ${response.rawBody}");
-      throw StateError("Response missing required 'articles' field.");
+      return ApiResponse(
+        status: response.status,
+        json: const {"articles": <dynamic>[]},
+        rawBody: response.rawBody,
+      );
     }
     return response;
   }
@@ -86,12 +90,10 @@ class NewsService {
   Future<ApiResponse> breakingNews({
     int page = 1,
     int pageSize = _defaultPageSize,
-    String? countries,
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
-      "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
       "page_size": "$pageSize",
       "page": "$page",
     };
