@@ -8,17 +8,10 @@ class LocalNewsService {
   static const String _sources = "/sources";
   static const String _searchBy = "/search_by";
   static const int _defaultPageSize = 20;
-  static const int _defaultRadiusKm = 50;
 
   void _requireLatLon(double? lat, double? lon) {
     if (lat == null || lon == null) {
       throw ArgumentError("lat and lon are required.");
-    }
-  }
-
-  void _requireNonEmpty(String field, String value) {
-    if (value.trim().isEmpty) {
-      throw ArgumentError("$field is required.");
     }
   }
 
@@ -38,29 +31,23 @@ class LocalNewsService {
   }
 
   Future<ApiResponse> localSearch({
-    required String q,
     required double? lat,
     required double? lon,
     int radiusKm = 50,
-    int page = 1,
     int pageSize = _defaultPageSize,
-    String lang = "en",
-    bool includeNlp = true,
   }) {
-    _requireNonEmpty("q", q);
     _requireLatLon(lat, lon);
-    _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     return _client
         .post(
           isNews: false,
           path: _search,
+          endpointName: "local.search",
           body: {
-            "q": q,
             "lat": lat,
             "lon": lon,
-            "radius": _defaultRadiusKm,
-            "page_size": _defaultPageSize,
+            "radius": radiusKm,
+            "page_size": pageSize,
           },
         )
         .then(_requireArticles);
@@ -70,23 +57,20 @@ class LocalNewsService {
     required double? lat,
     required double? lon,
     int radiusKm = 50,
-    int page = 1,
     int pageSize = _defaultPageSize,
-    String lang = "en",
-    bool includeNlp = true,
   }) {
     _requireLatLon(lat, lon);
-    _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     return _client
         .post(
           isNews: false,
           path: _search,
+          endpointName: "local.search",
           body: {
             "lat": lat,
             "lon": lon,
-            "radius": _defaultRadiusKm,
-            "page_size": _defaultPageSize,
+            "radius": radiusKm,
+            "page_size": pageSize,
           },
         )
         .then(_requireArticles);
@@ -105,7 +89,12 @@ class LocalNewsService {
     if (countries != null && countries.isNotEmpty) body["countries"] = countries;
     if (languages != null && languages.isNotEmpty) body["languages"] = languages;
 
-    return _client.post(isNews: false, path: _sources, body: body);
+    return _client.post(
+      isNews: false,
+      path: _sources,
+      endpointName: "local.sources",
+      body: body,
+    );
   }
 
   Future<ApiResponse> localSearchBy({
@@ -124,10 +113,15 @@ class LocalNewsService {
     final body = <String, dynamic>{
       "lat": lat,
       "lon": lon,
-      "radius": _defaultRadiusKm,
-      "page_size": _defaultPageSize,
+      "radius": radiusKm,
+      "page_size": pageSize,
       ...payload,
     };
-    return _client.post(isNews: false, path: _searchBy, body: body);
+    return _client.post(
+      isNews: false,
+      path: _searchBy,
+      endpointName: "local.search_by",
+      body: body,
+    );
   }
 }

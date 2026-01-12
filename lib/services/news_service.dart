@@ -16,7 +16,6 @@ class NewsService {
   static const String _subscription = "/subscription";
   static const int _defaultPageSize = 20;
   static const String _defaultCountry = "US";
-  static const String _defaultSortBy = "published_at";
 
   void _requireNonEmpty(String field, String value) {
     if (value.trim().isEmpty) {
@@ -41,59 +40,69 @@ class NewsService {
 
   Future<ApiResponse> search({
     required String q,
-    String lang = "en",
     int page = 1,
     int pageSize = _defaultPageSize,
-    bool clustering = true,
-    bool includeNlp = true,
-    String sortBy = "relevancy",
   }) {
     _requireNonEmpty("q", q);
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
       "q": q,
-      "page_size": "$_defaultPageSize",
-      "include_nlp_data": "true",
+      "page_size": "$pageSize",
+      "page": "$page",
     };
-    return _client.get(isNews: true, path: _search, query: query).then(_requireArticles);
+    return _client
+        .get(
+          isNews: true,
+          path: _search,
+          endpointName: "news.search",
+          query: query,
+        )
+        .then(_requireArticles);
   }
 
   Future<ApiResponse> latestHeadlines({
-    String lang = "en",
     int page = 1,
     int pageSize = _defaultPageSize,
-    String? topic,
     String? countries,
-    bool includeNlp = true,
-    String? sortBy = _defaultSortBy,
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
-      "countries": _defaultCountry,
-      "page_size": "$_defaultPageSize",
+      "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
+      "page_size": "$pageSize",
+      "page": "$page",
     };
-    if (sortBy != null && sortBy.isNotEmpty) {
-      query["sort_by"] = sortBy;
-    }
-    return _client.get(isNews: true, path: _latest, query: query).then(_requireArticles);
+    return _client
+        .get(
+          isNews: true,
+          path: _latest,
+          endpointName: "news.latest_headlines",
+          query: query,
+        )
+        .then(_requireArticles);
   }
 
   Future<ApiResponse> breakingNews({
-    String lang = "en",
     int page = 1,
     int pageSize = _defaultPageSize,
-    bool includeNlp = true,
     String? countries,
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
-      "countries": _defaultCountry,
-      "page_size": "$_defaultPageSize",
+      "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
+      "page_size": "$pageSize",
+      "page": "$page",
     };
-    return _client.get(isNews: true, path: _breaking, query: query).then(_requireArticles);
+    return _client
+        .get(
+          isNews: true,
+          path: _breaking,
+          endpointName: "news.breaking_news",
+          query: query,
+        )
+        .then(_requireArticles);
   }
 
   Future<ApiResponse> authors({
@@ -109,7 +118,12 @@ class NewsService {
     };
     if (q != null && q.isNotEmpty) query["q"] = q;
 
-    return _client.get(isNews: true, path: _authors, query: query);
+    return _client.get(
+      isNews: true,
+      path: _authors,
+      endpointName: "news.authors",
+      query: query,
+    );
   }
 
   Future<ApiResponse> searchSimilar({
@@ -128,7 +142,12 @@ class NewsService {
     if (q != null && q.isNotEmpty) body["q"] = q;
     if (url != null && url.isNotEmpty) body["url"] = url;
 
-    return _client.post(isNews: true, path: _similar, body: body);
+    return _client.post(
+      isNews: true,
+      path: _similar,
+      endpointName: "news.search_similar",
+      body: body,
+    );
   }
 
   Future<ApiResponse> sources({
@@ -144,7 +163,12 @@ class NewsService {
     if (countries != null && countries.isNotEmpty) query["countries"] = countries;
     if (languages != null && languages.isNotEmpty) query["languages"] = languages;
 
-    return _client.get(isNews: true, path: _sources, query: query);
+    return _client.get(
+      isNews: true,
+      path: _sources,
+      endpointName: "news.sources",
+      query: query,
+    );
   }
 
   Future<ApiResponse> aggregationCount({
@@ -162,11 +186,27 @@ class NewsService {
     if (countries != null && countries.isNotEmpty) body["countries"] = countries;
     if (topic != null && topic.isNotEmpty) body["topic"] = topic;
 
-    return _client.post(isNews: true, path: _agg, body: body);
+    return _client.post(
+      isNews: true,
+      path: _agg,
+      endpointName: "news.aggregation_count",
+      body: body,
+    );
   }
 
   Future<ApiResponse> subscription() {
-    // Some deployments require GET; others POST. Try GET first.
-    return _client.get(isNews: true, path: _subscription);
+    return _client.get(
+      isNews: true,
+      path: _subscription,
+      endpointName: "news.subscription",
+    );
+  }
+
+  Future<ApiResponse> healthCheck() {
+    return _client.get(
+      isNews: true,
+      path: "/__health",
+      endpointName: "news.__health",
+    );
   }
 }
