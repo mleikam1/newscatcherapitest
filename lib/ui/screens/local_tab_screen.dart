@@ -28,6 +28,10 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
 
   String? _city;
   String? _state;
+  double? _latitude;
+  double? _longitude;
+  String _language = "en";
+  bool _initialized = false;
   bool _stateFallbackActive = false;
   String? _fallbackMessage;
 
@@ -37,9 +41,21 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     final appState = context.watch<AppState>();
     final nextCity = appState.city;
     final nextState = appState.state;
-    if (nextCity != _city || nextState != _state) {
+    final nextLatitude = appState.latitude;
+    final nextLongitude = appState.longitude;
+    final nextLanguage = appState.selectedLanguage;
+    if (!_initialized ||
+        nextCity != _city ||
+        nextState != _state ||
+        nextLatitude != _latitude ||
+        nextLongitude != _longitude ||
+        nextLanguage != _language) {
       _city = nextCity;
       _state = nextState;
+      _latitude = nextLatitude;
+      _longitude = nextLongitude;
+      _language = nextLanguage;
+      _initialized = true;
       _stateFallbackActive = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadLocalNews(loadMore: false);
@@ -65,16 +81,17 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
 
     try {
       final response = await _fetchLocalNews(nextPage);
-      if (response.status != 200) {
-        debugPrint(
-          "Local news non-200 response: ${response.status} ${response.rawBody}",
-        );
+      final errorMessage = extractApiMessage(response);
+      if (errorMessage != null) {
+        setState(() => _section.error = errorMessage);
+        return;
       }
       final rawArticles =
           (response.json?["articles"] as List<dynamic>?) ?? const [];
       final parsed = rawArticles
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
+          .where((article) => _matchesLanguage(article, _language))
           .toList();
       if (parsed.isEmpty && !_stateFallbackActive && _state != null) {
         debugPrint(
@@ -117,6 +134,9 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     if (_stateFallbackActive) {
       return widget.local.localNews(
         state: _state,
+        latitude: _latitude,
+        longitude: _longitude,
+        language: _language,
         page: page,
         pageSize: _pageSize,
       );
@@ -124,6 +144,9 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     return widget.local.localNews(
       city: _city,
       state: _state,
+      latitude: _latitude,
+      longitude: _longitude,
+      language: _language,
       page: page,
       pageSize: _pageSize,
     );
@@ -132,13 +155,22 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
   Future<void> _retryWithStateOnly(int page) async {
     final response = await widget.local.localNews(
       state: _state,
+      latitude: _latitude,
+      longitude: _longitude,
+      language: _language,
       page: page,
       pageSize: _pageSize,
     );
+    final errorMessage = extractApiMessage(response);
+    if (errorMessage != null) {
+      setState(() => _section.error = errorMessage);
+      return;
+    }
     final rawArticles = (response.json?["articles"] as List<dynamic>?) ?? const [];
     final parsed = rawArticles
         .whereType<Map<String, dynamic>>()
         .map(Article.fromJson)
+        .where((article) => _matchesLanguage(article, _language))
         .toList();
     final merged = _mergeUnique(_section.items, parsed);
     setState(() {
@@ -164,6 +196,12 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     final link = article.link;
     if (link != null && link.isNotEmpty) return link;
     return "${article.title ?? ""}-${article.publishedDate ?? ""}";
+  }
+
+  bool _matchesLanguage(Article article, String language) {
+    final articleLang = article.language?.toLowerCase();
+    if (articleLang == null) return false;
+    return articleLang == language.toLowerCase();
   }
 
   void _openDetail(Article article) {

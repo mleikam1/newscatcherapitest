@@ -16,6 +16,7 @@ class NewsService {
   static const String _subscription = "/subscription";
   static const int _defaultPageSize = 20;
   static const String _defaultCountry = "US";
+  static const String _defaultLanguage = "en";
 
   void _requireNonEmpty(String field, String value) {
     if (value.trim().isEmpty) {
@@ -44,6 +45,8 @@ class NewsService {
 
   Future<ApiResponse> search({
     required String q,
+    String? countries,
+    String lang = _defaultLanguage,
     int page = 1,
     int pageSize = _defaultPageSize,
   }) {
@@ -52,8 +55,8 @@ class NewsService {
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
       "q": q,
-      "country": _defaultCountry,
-      "lang": "en",
+      "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
+      "lang": lang,
       "page_size": "$pageSize",
       "page": "$page",
     };
@@ -71,11 +74,13 @@ class NewsService {
     int page = 1,
     int pageSize = _defaultPageSize,
     String? countries,
+    String lang = _defaultLanguage,
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
       "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
+      "lang": lang,
       "page_size": "$pageSize",
       "page": "$page",
     };
@@ -89,12 +94,20 @@ class NewsService {
         .then(_requireArticles);
   }
 
-  Future<ApiResponse> breakingNews() {
+  Future<ApiResponse> breakingNews({
+    String? countries,
+    String lang = _defaultLanguage,
+  }) {
+    final query = <String, String>{
+      "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
+      "lang": lang,
+    };
     return _client
         .get(
           isNews: true,
           path: _breaking,
           endpointName: "news.breaking_news",
+          query: query,
         )
         .then(_requireArticles);
   }

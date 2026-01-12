@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../app_state.dart';
 import '../../models/article.dart';
 import '../../services/api_client.dart';
 import '../../services/news_service.dart';
@@ -32,8 +34,16 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   bool _hasMore = true;
   String? _error;
   String? _query;
+  String _language = "en";
 
   bool get _hasSearched => _query != null && _query!.isNotEmpty;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final appState = context.watch<AppState>();
+    _language = appState.selectedLanguage;
+  }
 
   @override
   void dispose() {
@@ -44,7 +54,16 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
 
   Future<void> _submitSearch(String value) async {
     final query = value.trim();
-    if (query.isEmpty) return;
+    if (query.isEmpty) {
+      setState(() {
+        _error = "Please enter a search term.";
+        _results = [];
+        _hasMore = false;
+        _page = 0;
+        _query = null;
+      });
+      return;
+    }
     setState(() {
       _query = query;
       _page = 0;
@@ -70,14 +89,25 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     try {
       final ApiResponse response = await widget.news.search(
         q: query,
+        countries: "US",
+        lang: _language,
         page: nextPage,
         pageSize: _pageSize,
       );
+      final errorMessage = extractApiMessage(response);
+      if (errorMessage != null) {
+        setState(() {
+          _error = errorMessage;
+          _hasMore = false;
+        });
+        return;
+      }
       final rawArticles =
           (response.json?["articles"] as List<dynamic>?) ?? const [];
       final parsed = rawArticles
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
+          .where((article) => _matchesLanguage(article, _language))
           .toList();
       final merged = _mergeUnique(_results, parsed);
       setState(() {
@@ -110,6 +140,12 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     final link = article.link;
     if (link != null && link.isNotEmpty) return link;
     return "${article.title ?? ""}-${article.publishedDate ?? ""}";
+  }
+
+  bool _matchesLanguage(Article article, String language) {
+    final articleLang = article.language?.toLowerCase();
+    if (articleLang == null) return false;
+    return articleLang == language.toLowerCase();
   }
 
   void _openDetail(Article article) {
@@ -184,10 +220,6 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   }
 
   Widget _buildResultsArea() {
-    if (!_hasSearched && !_isLoading) {
-      return const SizedBox.shrink();
-    }
-
     if (_isLoading && _results.isEmpty) {
       return ListView(
         padding: const EdgeInsets.only(top: 8),
@@ -210,6 +242,10 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
         message: _error!,
         onAction: _hasSearched ? () => _loadMore(reset: true) : null,
       );
+    }
+
+    if (!_hasSearched && !_isLoading) {
+      return const SizedBox.shrink();
     }
 
     if (_results.isEmpty) {

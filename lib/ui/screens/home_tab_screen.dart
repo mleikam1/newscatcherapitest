@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../../app_state.dart';
 import '../../models/article.dart';
 import '../../services/api_client.dart';
 import '../../services/news_service.dart';
@@ -27,13 +29,21 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
   static const int _pageSize = 20;
   static const String _country = "US";
+  String _language = "en";
+  bool _initialized = false;
 
   @override
-  void initState() {
-    super.initState();
-    _loadTopHeadlines();
-    _loadBreakingNews();
-    _loadLatestNews();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final appState = context.watch<AppState>();
+    final nextLanguage = appState.selectedLanguage;
+    if (!_initialized || nextLanguage != _language) {
+      _language = nextLanguage;
+      _initialized = true;
+      _loadTopHeadlines();
+      _loadBreakingNews();
+      _loadLatestNews();
+    }
   }
 
   Future<void> _loadTopHeadlines({bool loadMore = false}) {
@@ -42,6 +52,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       endpointName: "news.latest_headlines",
       loader: (page) => widget.news.latestHeadlines(
         countries: _country,
+        lang: _language,
         page: page,
         pageSize: _pageSize,
       ),
@@ -59,6 +70,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       endpointName: "news.latest_headlines",
       loader: (page) => widget.news.latestHeadlines(
         countries: _country,
+        lang: _language,
         page: page,
         pageSize: _pageSize,
       ),
@@ -83,17 +95,21 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     });
 
     try {
-      final response = await widget.news.breakingNews();
-      if (response.status != 200) {
-        debugPrint(
-          "Breaking news non-200 response: ${response.status} ${response.rawBody}",
-        );
+      final response = await widget.news.breakingNews(
+        countries: _country,
+        lang: _language,
+      );
+      final errorMessage = extractApiMessage(response);
+      if (errorMessage != null) {
+        setState(() => state.error = errorMessage);
+        return;
       }
       final rawArticles =
           (response.json?["articles"] as List<dynamic>?) ?? const [];
       final parsed = rawArticles
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
+          .where((article) => _matchesLanguage(article, _language))
           .toList();
       final merged = _mergeUnique(state.items, parsed);
       setState(() {
@@ -134,11 +150,17 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
     try {
       final response = await loader(nextPage);
+      final errorMessage = extractApiMessage(response);
+      if (errorMessage != null) {
+        setState(() => state.error = errorMessage);
+        return;
+      }
       final rawArticles =
           (response.json?["articles"] as List<dynamic>?) ?? const [];
       final parsed = rawArticles
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
+          .where((article) => _matchesLanguage(article, _language))
           .toList();
       final merged = _mergeUnique(state.items, parsed);
       setState(() {
@@ -173,6 +195,12 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     final link = article.link;
     if (link != null && link.isNotEmpty) return link;
     return "${article.title ?? ""}-${article.publishedDate ?? ""}";
+  }
+
+  bool _matchesLanguage(Article article, String language) {
+    final articleLang = article.language?.toLowerCase();
+    if (articleLang == null) return false;
+    return articleLang == language.toLowerCase();
   }
 
   void _openDetail(Article article) {
