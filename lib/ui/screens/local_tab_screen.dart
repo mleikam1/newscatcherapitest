@@ -11,6 +11,7 @@ import '../widgets/paging_footer.dart';
 import '../widgets/section_header.dart';
 import '../widgets/error_utils.dart';
 import '../widgets/story_list_row.dart';
+import '../widgets/state_message.dart';
 
 class LocalTabScreen extends StatefulWidget {
   final LocalNewsService local;
@@ -61,7 +62,7 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     try {
       final response = await widget.local.localLatestNearMe(
         location: _locationQuery,
-        countries: _countryCode == null ? null : [_countryCode!],
+        page: nextPage,
         pageSize: _pageSize,
       );
       final rawArticles =
@@ -129,40 +130,23 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
             child: Text(appState.locationStatus),
           ),
         if (_section.error != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_section.error!),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: () => _loadLocalNews(loadMore: false),
-                  child: const Text("Retry"),
-                ),
-              ],
-            ),
+          ErrorState(
+            message: _section.error!,
+            onAction: () => _loadLocalNews(loadMore: false),
           ),
-        if (_section.items.isEmpty && _section.isLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (_section.items.isEmpty && _section.error == null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("No local stories yet."),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: () => _loadLocalNews(loadMore: false),
-                  child: const Text("Retry"),
-                ),
-              ],
-            ),
-          )
+        if (_section.items.isEmpty)
+          if (_section.isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_section.error == null)
+            EmptyState(
+              title: "No local stories available.",
+              onAction: () => _loadLocalNews(loadMore: false),
+            )
+          else
+            const SizedBox.shrink()
         else ...[
           HeroStoryCard(
             article: _section.items.first,

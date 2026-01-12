@@ -9,6 +9,7 @@ import '../widgets/paging_footer.dart';
 import '../widgets/shimmer_loader.dart';
 import '../widgets/error_utils.dart';
 import '../widgets/story_list_row.dart';
+import '../widgets/state_message.dart';
 
 class SearchTabScreen extends StatefulWidget {
   final NewsService news;
@@ -205,43 +206,16 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     }
 
     if (_error != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: _hasSearched ? () => _loadMore(reset: true) : null,
-                child: const Text("Retry"),
-              ),
-            ],
-          ),
-        ),
+      return ErrorState(
+        message: _error!,
+        onAction: _hasSearched ? () => _loadMore(reset: true) : null,
       );
     }
 
     if (_results.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("No results yet."),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: _hasSearched ? () => _loadMore(reset: true) : null,
-                child: const Text("Retry"),
-              ),
-            ],
-          ),
-        ),
+      return EmptyState(
+        title: "No results yet.",
+        onAction: _hasSearched ? () => _loadMore(reset: true) : null,
       );
     }
 

@@ -9,6 +9,7 @@ import '../widgets/paging_footer.dart';
 import '../widgets/section_header.dart';
 import '../widgets/error_utils.dart';
 import '../widgets/story_list_row.dart';
+import '../widgets/state_message.dart';
 
 class HomeTabScreen extends StatefulWidget {
   final NewsService news;
@@ -53,7 +54,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       state: _breakingNews,
       endpointName: "news.breaking_news",
       loader: (page) => widget.news.breakingNews(
-        countries: _country,
         page: page,
         pageSize: _pageSize,
       ),
@@ -183,42 +183,23 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(title: title),
-        if (state.error != null && items.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(state.error!),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: onRetry,
-                  child: const Text("Retry"),
-                ),
-              ],
+        if (items.isEmpty) ...[
+          if (state.isLoading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 32),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (state.error != null)
+            ErrorState(
+              message: state.error!,
+              onAction: onRetry,
+            )
+          else
+            EmptyState(
+              title: "No stories available.",
+              onAction: onRetry,
             ),
-          ),
-        if (items.isEmpty && state.isLoading)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 32),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (items.isEmpty && state.error == null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text("No stories yet."),
-                const SizedBox(height: 8),
-                ElevatedButton(
-                  onPressed: onRetry,
-                  child: const Text("Retry"),
-                ),
-              ],
-            ),
-          )
-        else ...[
+        ] else ...[
           if (state.error != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
