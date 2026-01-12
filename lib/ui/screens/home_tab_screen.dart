@@ -113,7 +113,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       setState(() {
         state.error = message;
       });
-      Error.throwWithStackTrace(Exception(message), stack);
+      debugPrint("Home tab error: $message\n$stack");
     } finally {
       setState(() => state.isLoading = false);
     }
@@ -153,16 +153,19 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
           title: "Top Headlines",
           state: _topHeadlines,
           onMore: () => _loadTopHeadlines(loadMore: true),
+          onRetry: () => _loadTopHeadlines(),
         ),
         _buildSection(
           title: "Breaking News",
           state: _breakingNews,
           onMore: () => _loadBreakingNews(loadMore: true),
+          onRetry: () => _loadBreakingNews(),
         ),
         _buildSection(
           title: "Latest News",
           state: _latestNews,
           onMore: () => _loadLatestNews(loadMore: true),
+          onRetry: () => _loadLatestNews(),
         ),
       ],
     );
@@ -172,6 +175,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     required String title,
     required _SectionState state,
     required VoidCallback onMore,
+    required VoidCallback onRetry,
   }) {
     final items = state.items;
 
@@ -179,10 +183,20 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(title: title),
-        if (state.error != null)
+        if (state.error != null && items.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Text(state.error!),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(state.error!),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: onRetry,
+                  child: const Text("Retry"),
+                ),
+              ],
+            ),
           ),
         if (items.isEmpty && state.isLoading)
           const Padding(
@@ -190,11 +204,26 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
             child: Center(child: CircularProgressIndicator()),
           )
         else if (items.isEmpty && state.error == null)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Text("No stories yet."),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("No stories yet."),
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: onRetry,
+                  child: const Text("Retry"),
+                ),
+              ],
+            ),
           )
         else ...[
+          if (state.error != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(state.error!),
+            ),
           HeroStoryCard(
             article: items.first,
             onTap: () => _openDetail(items.first),
