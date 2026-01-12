@@ -26,17 +26,21 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
   final _section = _SectionState();
   static const int _pageSize = 20;
 
-  String? _locationQuery;
-  String? _countryCode;
+  String? _city;
+  String? _state;
+  bool _stateFallbackActive = false;
+  String? _fallbackMessage;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final locale = Localizations.localeOf(context);
-    final location = _resolveLocationQuery(locale);
-    if (location != _locationQuery || locale.countryCode != _countryCode) {
-      _locationQuery = location;
-      _countryCode = locale.countryCode;
+    final appState = context.watch<AppState>();
+    final nextCity = appState.city;
+    final nextState = appState.state;
+    if (nextCity != _city || nextState != _state) {
+      _city = nextCity;
+      _state = nextState;
+      _stateFallbackActive = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadLocalNews(loadMore: false);
       });
@@ -46,12 +50,12 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
   Future<void> _loadLocalNews({required bool loadMore}) async {
     if (_section.isLoading) return;
     if (loadMore && !_section.hasMore) return;
-    if (_locationQuery == null || _locationQuery!.isEmpty) return;
 
     final nextPage = loadMore ? _section.page + 1 : 1;
     setState(() {
       _section.isLoading = true;
       _section.error = null;
+      _fallbackMessage = null;
       if (!loadMore) {
         _section.items = [];
         _section.hasMore = true;
@@ -60,17 +64,30 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     });
 
     try {
-      final response = await widget.local.localLatestNearMe(
-        location: _locationQuery,
-        page: nextPage,
-        pageSize: _pageSize,
-      );
+      final response = await _fetchLocalNews(nextPage);
+      if (response.status != 200) {
+        debugPrint(
+          "Local news non-200 response: ${response.status} ${response.rawBody}",
+        );
+      }
       final rawArticles =
           (response.json?["articles"] as List<dynamic>?) ?? const [];
       final parsed = rawArticles
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
           .toList();
+      if (parsed.isEmpty && !_stateFallbackActive && _state != null) {
+        debugPrint(
+          "Local news empty for city/state. Retrying with state-only query.",
+        );
+        _stateFallbackActive = true;
+        setState(() {
+          _fallbackMessage =
+              "We couldn't find city stories. Showing statewide coverage.";
+        });
+        await _retryWithStateOnly(nextPage);
+        return;
+      }
       final merged = _mergeUnique(_section.items, parsed);
       setState(() {
         _section.items = merged;
@@ -78,14 +95,57 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
         _section.hasMore = parsed.length >= _pageSize;
       });
     } catch (e, stack) {
-      final message = formatApiError(e, endpointName: "local.search");
-      setState(() {
-        _section.error = message;
-      });
+      final message = formatApiError(e, endpointName: "local.local_news");
+      if (!_stateFallbackActive && _state != null) {
+        _stateFallbackActive = true;
+        setState(() {
+          _fallbackMessage =
+              "We couldn't load city news. Showing statewide coverage instead.";
+        });
+        debugPrint("Local news error: $message\n$stack");
+        await _retryWithStateOnly(nextPage);
+        return;
+      }
+      setState(() => _section.error = message);
       debugPrint("Local news error: $message\n$stack");
     } finally {
       setState(() => _section.isLoading = false);
     }
+  }
+
+  Future<ApiResponse> _fetchLocalNews(int page) {
+    if (_stateFallbackActive) {
+      return widget.local.localNews(
+        state: _state,
+        page: page,
+        pageSize: _pageSize,
+      );
+    }
+    return widget.local.localNews(
+      city: _city,
+      state: _state,
+      page: page,
+      pageSize: _pageSize,
+    );
+  }
+
+  Future<void> _retryWithStateOnly(int page) async {
+    final response = await widget.local.localNews(
+      state: _state,
+      page: page,
+      pageSize: _pageSize,
+    );
+    final rawArticles = (response.json?["articles"] as List<dynamic>?) ?? const [];
+    final parsed = rawArticles
+        .whereType<Map<String, dynamic>>()
+        .map(Article.fromJson)
+        .toList();
+    final merged = _mergeUnique(_section.items, parsed);
+    setState(() {
+      _section.items = merged;
+      _section.page = page;
+      _section.hasMore = parsed.length >= _pageSize;
+    });
   }
 
   List<Article> _mergeUnique(List<Article> existing, List<Article> incoming) {
@@ -117,7 +177,9 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final locationLabel = _locationQuery ?? "Local News";
+    final locationLabel = _stateFallbackActive
+        ? (_state ?? "United States")
+        : (_city ?? _state ?? "United States");
 
     return ListView(
       children: [
@@ -133,6 +195,14 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
           ErrorState(
             message: _section.error!,
             onAction: () => _loadLocalNews(loadMore: false),
+          ),
+        if (_fallbackMessage != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Text(
+              _fallbackMessage!,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
           ),
         if (_section.items.isEmpty)
           if (_section.isLoading)
@@ -167,21 +237,6 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
     );
   }
 
-  String _resolveLocationQuery(Locale locale) {
-    const fallback = "United States";
-    final code = locale.countryCode?.toUpperCase();
-    if (code == null) return fallback;
-    const countryNames = {
-      "US": "United States",
-      "CA": "Canada",
-      "GB": "United Kingdom",
-      "AU": "Australia",
-      "NZ": "New Zealand",
-      "IE": "Ireland",
-      "IN": "India",
-    };
-    return countryNames[code] ?? code;
-  }
 }
 
 class _SectionState {

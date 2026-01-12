@@ -8,7 +8,7 @@ class NewsService {
   // If your swagger differs slightly, adjust the path constants here only.
   static const String _search = "/search";
   static const String _latest = "/latest_headlines";
-  static const String _breaking = "/breaking_news";
+  static const String _breaking = "/breaking";
   static const String _authors = "/authors";
   static const String _similar = "/search_similar";
   static const String _sources = "/sources";
@@ -52,6 +52,8 @@ class NewsService {
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
       "q": q,
+      "country": _defaultCountry,
+      "lang": "en",
       "page_size": "$pageSize",
       "page": "$page",
     };
@@ -89,7 +91,7 @@ class NewsService {
 
   Future<ApiResponse> breakingNews({
     int page = 1,
-    int pageSize = _defaultPageSize,
+    int pageSize = 10,
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
@@ -102,6 +104,30 @@ class NewsService {
           isNews: true,
           path: _breaking,
           endpointName: "news.breaking_news",
+          query: query,
+        )
+        .then(_requireArticles);
+  }
+
+  Future<ApiResponse> breakingNewsFallback({
+    int page = 1,
+    int pageSize = 10,
+  }) {
+    _requirePositive("page", page);
+    _requirePositive("page_size", pageSize);
+    final query = <String, String>{
+      "q": "breaking news",
+      "country": _defaultCountry,
+      "lang": "en",
+      "sort_by": "published_date",
+      "page_size": "$pageSize",
+      "page": "$page",
+    };
+    return _client
+        .get(
+          isNews: true,
+          path: _search,
+          endpointName: "news.breaking_news_fallback",
           query: query,
         )
         .then(_requireArticles);
