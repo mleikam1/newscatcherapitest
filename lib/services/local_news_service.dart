@@ -17,6 +17,7 @@ class LocalNewsService {
     int page = 1,
     int pageSize = 25,
     String lang = "en",
+    bool includeNlp = true,
   }) {
     return _client.post(
       isNews: false,
@@ -29,6 +30,7 @@ class LocalNewsService {
         "lang": lang,
         "page": page,
         "page_size": pageSize,
+        "include_nlp_data": includeNlp,
       },
     );
   }
@@ -40,6 +42,7 @@ class LocalNewsService {
     int page = 1,
     int pageSize = 25,
     String lang = "en",
+    bool includeNlp = true,
   }) {
     return _client.post(
       isNews: false,
@@ -51,6 +54,7 @@ class LocalNewsService {
         "lang": lang,
         "page": page,
         "page_size": pageSize,
+        "include_nlp_data": includeNlp,
       },
     );
   }
