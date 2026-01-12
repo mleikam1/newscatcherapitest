@@ -4,7 +4,7 @@ class LocalNewsService {
   final ApiClient _client;
   LocalNewsService(this._client);
 
-  static const String _search = "/search";
+  static const String _localNews = "/local-news";
   static const String _sources = "/sources";
   static const String _searchBy = "/search_by";
   static const int _defaultPageSize = 20;
@@ -12,13 +12,6 @@ class LocalNewsService {
   void _requirePositive(String field, int value) {
     if (value <= 0) {
       throw ArgumentError("$field must be greater than zero.");
-    }
-  }
-
-  void _requireLocation(String? location) {
-    final hasLocation = location != null && location.trim().isNotEmpty;
-    if (!hasLocation) {
-      throw ArgumentError("location is required.");
     }
   }
 
@@ -35,27 +28,29 @@ class LocalNewsService {
     return response;
   }
 
-  Future<ApiResponse> localSearch({
-    String? location,
+  Future<ApiResponse> localNews({
+    String? city,
+    String? state,
     int page = 1,
     int pageSize = _defaultPageSize,
   }) {
-    _requireLocation(location);
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
-    final trimmedLocation = location?.trim();
     final body = <String, dynamic>{
       "page": page,
       "page_size": pageSize,
     };
-    if (trimmedLocation != null && trimmedLocation.isNotEmpty) {
-      body["location"] = trimmedLocation;
+    if (city != null && city.trim().isNotEmpty) {
+      body["city"] = city.trim();
+    }
+    if (state != null && state.trim().isNotEmpty) {
+      body["state"] = state.trim();
     }
     return _client
         .post(
           isNews: false,
-          path: _search,
-          endpointName: "local.search",
+          path: _localNews,
+          endpointName: "local.local_news",
           body: body,
         )
         .then(_requireArticles);
@@ -66,25 +61,9 @@ class LocalNewsService {
     int page = 1,
     int pageSize = _defaultPageSize,
   }) {
-    _requireLocation(location);
-    _requirePositive("page", page);
-    _requirePositive("page_size", pageSize);
-    final trimmedLocation = location?.trim();
-    final body = <String, dynamic>{
-      "page": page,
-      "page_size": pageSize,
-    };
-    if (trimmedLocation != null && trimmedLocation.isNotEmpty) {
-      body["location"] = trimmedLocation;
-    }
-    return _client
-        .post(
-          isNews: false,
-          path: _search,
-          endpointName: "local.search",
-          body: body,
-        )
-        .then(_requireArticles);
+    throw UnimplementedError(
+      "localLatestNearMe is deprecated. Use localNews with city/state.",
+    );
   }
 
   Future<ApiResponse> localSources({
@@ -118,7 +97,9 @@ class LocalNewsService {
     int page = 1,
     int pageSize = _defaultPageSize,
   }) {
-    _requireLocation(location);
+    if (location == null || location.trim().isEmpty) {
+      throw ArgumentError("location is required.");
+    }
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     final trimmedLocation = location?.trim();

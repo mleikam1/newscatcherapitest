@@ -50,15 +50,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   }
 
   Future<void> _loadBreakingNews({bool loadMore = false}) {
-    return _loadSection(
-      state: _breakingNews,
-      endpointName: "news.breaking_news",
-      loader: (page) => widget.news.breakingNews(
-        page: page,
-        pageSize: _pageSize,
-      ),
-      loadMore: loadMore,
-    );
+    return _loadBreakingSection(loadMore: loadMore);
   }
 
   Future<void> _loadLatestNews({bool loadMore = false}) {
@@ -72,6 +64,68 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       ),
       loadMore: loadMore,
     );
+  }
+
+  Future<void> _loadBreakingSection({required bool loadMore}) async {
+    final state = _breakingNews;
+    if (state.isLoading) return;
+    if (loadMore && !state.hasMore) return;
+
+    final nextPage = loadMore ? state.page + 1 : 1;
+    setState(() {
+      state.isLoading = true;
+      state.error = null;
+      if (!loadMore) {
+        state.items = [];
+        state.hasMore = true;
+        state.page = 0;
+      }
+    });
+
+    try {
+      var response = await widget.news.breakingNews(
+        page: nextPage,
+        pageSize: 10,
+      );
+      if (response.status != 200) {
+        debugPrint(
+          "Breaking news non-200 response: ${response.status} ${response.rawBody}",
+        );
+      }
+      var rawArticles =
+          (response.json?["articles"] as List<dynamic>?) ?? const [];
+      var parsed = rawArticles
+          .whereType<Map<String, dynamic>>()
+          .map(Article.fromJson)
+          .toList();
+      if (parsed.isEmpty) {
+        debugPrint("Breaking news empty. Retrying with fallback search.");
+        response = await widget.news.breakingNewsFallback(
+          page: nextPage,
+          pageSize: 10,
+        );
+        rawArticles =
+            (response.json?["articles"] as List<dynamic>?) ?? const [];
+        parsed = rawArticles
+            .whereType<Map<String, dynamic>>()
+            .map(Article.fromJson)
+            .toList();
+      }
+      final merged = _mergeUnique(state.items, parsed);
+      setState(() {
+        state.items = merged;
+        state.page = nextPage;
+        state.hasMore = parsed.length >= 10;
+      });
+    } catch (e, stack) {
+      final message = formatApiError(e, endpointName: "news.breaking_news");
+      setState(() {
+        state.error = message;
+      });
+      debugPrint("Breaking news error: $message\n$stack");
+    } finally {
+      setState(() => state.isLoading = false);
+    }
   }
 
   Future<void> _loadSection({
