@@ -14,9 +14,27 @@ class NewsService {
   static const String _sources = "/sources";
   static const String _agg = "/aggregation_count";
   static const String _subscription = "/subscription";
-  static const int _defaultPageSize = 20;
+  static const int _defaultPageSize = 50;
   static const String _defaultCountry = "US";
   static const String _defaultLanguage = "en";
+  static const Duration _defaultFreshness = Duration(hours: 24);
+  static const Duration _breakingFreshness = Duration(hours: 2);
+
+  String _toIso(DateTime dateTime) => dateTime.toUtc().toIso8601String();
+
+  void _applyFreshnessParams(
+    Map<String, String> query,
+    Duration window,
+  ) {
+    final now = DateTime.now().toUtc();
+    query["from"] = _toIso(now.subtract(window));
+    query["to"] = _toIso(now);
+  }
+
+  void _applySortParams(Map<String, String> query) {
+    query["sort_by"] = "published_date";
+    query["order"] = "desc";
+  }
 
   void _requireNonEmpty(String field, String value) {
     if (value.trim().isEmpty) {
@@ -52,6 +70,7 @@ class NewsService {
     String? topic,
     String? sortBy,
     String? order,
+    Map<String, String>? extraParams,
   }) {
     _requireNonEmpty("q", q);
     _requirePositive("page", page);
@@ -63,9 +82,16 @@ class NewsService {
       "page_size": "$pageSize",
       "page": "$page",
     };
+    _applyFreshnessParams(query, _defaultFreshness);
+    _applySortParams(query);
     if (topic != null && topic.isNotEmpty) query["topic"] = topic;
     if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
     if (order != null && order.isNotEmpty) query["order"] = order;
+    query["clustering_enabled"] = "true";
+    query["deduplication_enabled"] = "true";
+    if (extraParams != null && extraParams.isNotEmpty) {
+      query.addAll(extraParams);
+    }
     return _client
         .get(
           isNews: true,
@@ -92,8 +118,12 @@ class NewsService {
       "page_size": "$pageSize",
       "page": "$page",
     };
+    _applyFreshnessParams(query, _defaultFreshness);
+    _applySortParams(query);
     if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
     if (order != null && order.isNotEmpty) query["order"] = order;
+    query["clustering_enabled"] = "true";
+    query["deduplication_enabled"] = "true";
     return _client
         .get(
           isNews: true,
@@ -109,11 +139,17 @@ class NewsService {
     String lang = _defaultLanguage,
     String? sortBy,
     String? order,
+    int page = 1,
+    int pageSize = _defaultPageSize,
   }) {
     final query = <String, String>{
       "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
       "lang": lang,
+      "page": "$page",
+      "page_size": "$pageSize",
     };
+    _applyFreshnessParams(query, _breakingFreshness);
+    _applySortParams(query);
     if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
     if (order != null && order.isNotEmpty) query["order"] = order;
     return _client
