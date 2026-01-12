@@ -2,12 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'app_state.dart';
+import 'services/api_client.dart';
 import 'ui/app_scaffold.dart';
 
 void main() {
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => AppState()..initLocation(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(
+          create: (_) => AppState()..initLocation(),
+        ),
+        ChangeNotifierProvider.value(
+          value: ApiDiagnostics.instance,
+        ),
+      ],
       child: const NewscatcherPocApp(),
     ),
   );

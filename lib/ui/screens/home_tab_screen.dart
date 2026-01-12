@@ -7,6 +7,7 @@ import '../screens/article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
 import '../widgets/paging_footer.dart';
 import '../widgets/section_header.dart';
+import '../widgets/error_utils.dart';
 import '../widgets/story_list_row.dart';
 
 class HomeTabScreen extends StatefulWidget {
@@ -37,11 +38,11 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   Future<void> _loadTopHeadlines({bool loadMore = false}) {
     return _loadSection(
       state: _topHeadlines,
+      endpointName: "news.latest_headlines",
       loader: (page) => widget.news.latestHeadlines(
         countries: _country,
         page: page,
         pageSize: _pageSize,
-        includeNlp: true,
       ),
       loadMore: loadMore,
     );
@@ -50,11 +51,11 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   Future<void> _loadBreakingNews({bool loadMore = false}) {
     return _loadSection(
       state: _breakingNews,
+      endpointName: "news.breaking_news",
       loader: (page) => widget.news.breakingNews(
         countries: _country,
         page: page,
         pageSize: _pageSize,
-        includeNlp: true,
       ),
       loadMore: loadMore,
     );
@@ -63,11 +64,11 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   Future<void> _loadLatestNews({bool loadMore = false}) {
     return _loadSection(
       state: _latestNews,
+      endpointName: "news.latest_headlines",
       loader: (page) => widget.news.latestHeadlines(
         countries: _country,
         page: page,
         pageSize: _pageSize,
-        includeNlp: true,
       ),
       loadMore: loadMore,
     );
@@ -75,6 +76,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
   Future<void> _loadSection({
     required _SectionState state,
+    required String endpointName,
     required Future<ApiResponse> Function(int page) loader,
     required bool loadMore,
   }) async {
@@ -106,10 +108,12 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
         state.page = nextPage;
         state.hasMore = parsed.length >= _pageSize;
       });
-    } catch (e) {
+    } catch (e, stack) {
+      final message = formatApiError(e, endpointName: endpointName);
       setState(() {
-        state.error = "Unable to load stories.";
+        state.error = message;
       });
+      Error.throwWithStackTrace(Exception(message), stack);
     } finally {
       setState(() => state.isLoading = false);
     }
@@ -185,7 +189,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
             padding: EdgeInsets.symmetric(vertical: 32),
             child: Center(child: CircularProgressIndicator()),
           )
-        else if (items.isEmpty)
+        else if (items.isEmpty && state.error == null)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Text("No stories yet."),

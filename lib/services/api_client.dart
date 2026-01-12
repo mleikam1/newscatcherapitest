@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
@@ -11,43 +12,102 @@ class ApiResponse {
   ApiResponse({required this.status, required this.json, required this.rawBody});
 }
 
-class ApiException implements Exception {
-  final int status;
+class ApiRequestException implements Exception {
+  final String method;
+  final Uri url;
+  final String endpointName;
+  final int? status;
   final String body;
 
-  ApiException({required this.status, required this.body});
+  ApiRequestException({
+    required this.method,
+    required this.url,
+    required this.endpointName,
+    required this.status,
+    required this.body,
+  });
+
+  String get displayMessage {
+    final code = status != null ? "HTTP $status" : "HTTP error";
+    return "$code • $endpointName • ${url.toString()} • $body";
+  }
 
   @override
-  String toString() => "ApiException(status: $status, body: $body)";
+  String toString() => displayMessage;
+}
+
+class ApiDiagnostics extends ChangeNotifier {
+  ApiDiagnostics._();
+
+  static final ApiDiagnostics instance = ApiDiagnostics._();
+
+  String get workerBaseUrl => _normalizeBaseUrl(AppConfig.proxyBaseUrl);
+
+  String? lastRequestUrl;
+  String? lastMethod;
+  String? lastQueryParams;
+  String? lastRequestBody;
+  int? lastStatus;
+  String? lastResponseSnippet;
+  String? lastErrorMessage;
+
+  void recordRequest({
+    required String method,
+    required Uri url,
+    Map<String, String>? query,
+    String? body,
+  }) {
+    lastMethod = method;
+    lastRequestUrl = url.toString();
+    lastQueryParams = query == null ? null : jsonEncode(query);
+    lastRequestBody = body;
+    lastErrorMessage = null;
+    notifyListeners();
+  }
+
+  void recordResponse({
+    required int status,
+    required String responseSnippet,
+  }) {
+    lastStatus = status;
+    lastResponseSnippet = responseSnippet;
+    notifyListeners();
+  }
+
+  void recordError(String message, {int? status}) {
+    lastErrorMessage = message;
+    if (status != null) {
+      lastStatus = status;
+    }
+    notifyListeners();
+  }
+}
+
+String _normalizeBaseUrl(String base) {
+  if (base.startsWith("http://") || base.startsWith("https://")) {
+    return base;
+  }
+  return "https://$base";
 }
 
 class ApiClient {
   final http.Client _http;
+  final ApiDiagnostics _diagnostics;
 
-  ApiClient({http.Client? httpClient}) : _http = httpClient ?? http.Client();
+  ApiClient({http.Client? httpClient, ApiDiagnostics? diagnostics})
+      : _http = httpClient ?? http.Client(),
+        _diagnostics = diagnostics ?? ApiDiagnostics.instance;
 
   static const int _maxLogBody = 2000;
-
-  String _normalizeBaseUrl(String base) {
-    if (base.startsWith("http://") || base.startsWith("https://")) {
-      return base;
-    }
-    return "https://$base";
-  }
 
   Uri _buildUri({
     required bool isNews,
     required String path,
     Map<String, String>? query,
   }) {
-    if (AppConfig.useProxy) {
-      final base = _normalizeBaseUrl(AppConfig.proxyBaseUrl);
-      final prefix = isNews ? AppConfig.proxyNewsPrefix : AppConfig.proxyLocalPrefix;
-      return Uri.parse("$base$prefix$path").replace(queryParameters: query);
-    } else {
-      final base = isNews ? AppConfig.newsBaseUrl : AppConfig.localBaseUrl;
-      return Uri.parse("$base$path").replace(queryParameters: query);
-    }
+    final base = _normalizeBaseUrl(AppConfig.proxyBaseUrl);
+    final prefix = isNews ? AppConfig.proxyNewsPrefix : AppConfig.proxyLocalPrefix;
+    return Uri.parse("$base$prefix$path").replace(queryParameters: query);
   }
 
   String _truncate(String body) {
@@ -57,78 +117,119 @@ class ApiClient {
     return body.substring(0, _maxLogBody);
   }
 
-  void _logRequest(String method, Uri uri, {String? body}) {
-    print("→ $method $uri");
+  void _logRequest(
+    String method,
+    Uri uri, {
+    Map<String, String>? query,
+    String? body,
+  }) {
+    debugPrint("→ $method $uri");
+    if (query != null && query.isNotEmpty) {
+      debugPrint("→ QUERY ${jsonEncode(query)}");
+    }
     if (body != null && body.isNotEmpty) {
-      print("→ BODY ${_truncate(body)}");
+      debugPrint("→ BODY ${_truncate(body)}");
     }
   }
 
   void _logResponse(http.Response resp) {
-    print("← ${resp.statusCode} ${_truncate(resp.body)}");
+    debugPrint("← ${resp.statusCode} ${_truncate(resp.body)}");
   }
 
-  Map<String, String> _headers({required bool isNews}) {
-    final h = <String, String>{
-      "content-type": "application/json",
-      "accept": "application/json",
-    };
-
-    if (!AppConfig.useProxy) {
-      final token = isNews ? AppConfig.newsApiToken : AppConfig.localApiToken;
-      h["x-api-token"] = token;
-    }
-
-    return h;
-  }
+  Map<String, String> _headers() => const <String, String>{
+        "content-type": "application/json",
+        "accept": "application/json",
+      };
 
   Future<ApiResponse> get({
     required bool isNews,
     required String path,
+    required String endpointName,
     Map<String, String>? query,
   }) async {
     final uri = _buildUri(isNews: isNews, path: path, query: query);
-    _logRequest("GET", uri);
-    final resp = await _http.get(uri, headers: _headers(isNews: isNews));
-    return _parse(resp);
+    _logRequest("GET", uri, query: query);
+    _diagnostics.recordRequest(method: "GET", url: uri, query: query);
+    final resp = await _http.get(uri, headers: _headers());
+    return _parse(resp, method: "GET", url: uri, endpointName: endpointName);
   }
 
   Future<ApiResponse> post({
     required bool isNews,
     required String path,
+    required String endpointName,
     Map<String, String>? query,
     Map<String, dynamic>? body,
   }) async {
     final uri = _buildUri(isNews: isNews, path: path, query: query);
     final encodedBody = jsonEncode(body ?? <String, dynamic>{});
-    _logRequest("POST", uri, body: encodedBody);
-    final resp = await _http.post(
-      uri,
-      headers: _headers(isNews: isNews),
+    _logRequest("POST", uri, query: query, body: encodedBody);
+    _diagnostics.recordRequest(
+      method: "POST",
+      url: uri,
+      query: query,
       body: encodedBody,
     );
-    return _parse(resp);
+    final resp = await _http.post(
+      uri,
+      headers: _headers(),
+      body: encodedBody,
+    );
+    return _parse(resp, method: "POST", url: uri, endpointName: endpointName);
   }
 
-  ApiResponse _parse(http.Response resp) {
+  ApiResponse _parse(
+    http.Response resp, {
+    required String method,
+    required Uri url,
+    required String endpointName,
+  }) {
     _logResponse(resp);
+    _diagnostics.recordResponse(
+      status: resp.statusCode,
+      responseSnippet: _truncate(resp.body),
+    );
     if (resp.body.trim().isEmpty) {
-      throw ApiException(status: resp.statusCode, body: "Empty response body.");
+      final message = "Empty response body.";
+      _diagnostics.recordError(message, status: resp.statusCode);
+      throw ApiRequestException(
+        method: method,
+        url: url,
+        endpointName: endpointName,
+        status: resp.statusCode,
+        body: message,
+      );
     }
     if (resp.statusCode != 200) {
-      print("API error: ${resp.statusCode} ${resp.body}");
-      throw ApiException(status: resp.statusCode, body: resp.body);
+      final message = _truncate(resp.body);
+      debugPrint("API error: ${resp.statusCode} $message");
+      _diagnostics.recordError(message, status: resp.statusCode);
+      throw ApiRequestException(
+        method: method,
+        url: url,
+        endpointName: endpointName,
+        status: resp.statusCode,
+        body: message,
+      );
     }
     try {
       final decoded = jsonDecode(resp.body);
       if (decoded is Map<String, dynamic>) {
-        print("← JSON keys: ${decoded.keys.join(", ")}");
+        debugPrint("← JSON keys: ${decoded.keys.join(", ")}");
         return ApiResponse(status: resp.statusCode, json: decoded, rawBody: resp.body);
       }
       throw FormatException("Expected JSON object but got ${decoded.runtimeType}.");
     } catch (error) {
-      print("API JSON parse error: $error");
-      throw ApiException(status: resp.statusCode, body: resp.body);
+      final message = "JSON parse error: $error";
+      debugPrint("API JSON parse error: $message");
+      _diagnostics.recordError(message, status: resp.statusCode);
+      throw ApiRequestException(
+        method: method,
+        url: url,
+        endpointName: endpointName,
+        status: resp.statusCode,
+        body: message,
+      );
     }
   }
 }

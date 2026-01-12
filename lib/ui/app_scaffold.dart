@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../services/api_client.dart';
 import '../services/local_news_service.dart';
@@ -6,6 +7,8 @@ import '../services/news_service.dart';
 import 'screens/home_tab_screen.dart';
 import 'screens/local_tab_screen.dart';
 import 'screens/search_tab_screen.dart';
+import 'widgets/debug_banner.dart';
+import 'widgets/error_utils.dart';
 
 class AppScaffold extends StatefulWidget {
   const AppScaffold({super.key});
@@ -20,6 +23,7 @@ class _AppScaffoldState extends State<AppScaffold> {
   late final LocalNewsService _local;
 
   int _tabIndex = 0;
+  List<String> _smokeTestErrors = [];
 
   @override
   void initState() {
@@ -27,22 +31,100 @@ class _AppScaffoldState extends State<AppScaffold> {
     _client = ApiClient();
     _news = NewsService(_client);
     _local = LocalNewsService(_client);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _runSmokeTests();
+    });
+  }
+
+  Future<void> _runSmokeTests() async {
+    final errors = <String>[];
+    try {
+      await _news.healthCheck();
+    } catch (e) {
+      errors.add(formatApiError(e, endpointName: "news.__health"));
+    }
+
+    try {
+      await _news.latestHeadlines(
+        countries: "US",
+        page: 1,
+        pageSize: 1,
+      );
+    } catch (e) {
+      errors.add(formatApiError(e, endpointName: "news.latest_headlines"));
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _smokeTestErrors = errors;
+    });
+  }
+
+  Widget _buildErrorBanner(List<String> errors) {
+    if (errors.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      width: double.infinity,
+      color: Colors.red.shade700,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: DefaultTextStyle(
+        style: const TextStyle(color: Colors.white),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Startup checks failed:"),
+            for (final error in errors)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(error),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLastErrorBanner(ApiDiagnostics diagnostics) {
+    final message = diagnostics.lastErrorMessage;
+    if (message == null || message.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      width: double.infinity,
+      color: Colors.red.shade100,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Text(
+        "Last API error: $message",
+        style: const TextStyle(color: Colors.black87),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final titles = ["newscatcher test", "Local", "Search"];
+    final diagnostics = context.watch<ApiDiagnostics>();
 
     return Scaffold(
       appBar: AppBar(
         title: Text(titles[_tabIndex]),
       ),
-      body: IndexedStack(
-        index: _tabIndex,
+      body: Column(
         children: [
-          HomeTabScreen(news: _news),
-          LocalTabScreen(local: _local),
-          SearchTabScreen(news: _news),
+          _buildErrorBanner(_smokeTestErrors),
+          _buildLastErrorBanner(diagnostics),
+          DebugBanner(diagnostics: diagnostics),
+          Expanded(
+            child: IndexedStack(
+              index: _tabIndex,
+              children: [
+                HomeTabScreen(news: _news),
+                LocalTabScreen(local: _local),
+                SearchTabScreen(news: _news),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(

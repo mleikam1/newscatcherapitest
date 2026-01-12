@@ -7,6 +7,7 @@ import 'article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
 import '../widgets/paging_footer.dart';
 import '../widgets/shimmer_loader.dart';
+import '../widgets/error_utils.dart';
 import '../widgets/story_list_row.dart';
 
 class SearchTabScreen extends StatefulWidget {
@@ -70,7 +71,6 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
         q: query,
         page: nextPage,
         pageSize: _pageSize,
-        includeNlp: true,
       );
       final rawArticles =
           (response.json?["articles"] as List<dynamic>?) ?? const [];
@@ -84,8 +84,10 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
         _page = nextPage;
         _hasMore = parsed.length >= _pageSize;
       });
-    } catch (e) {
-      setState(() => _error = "Unable to load search results.");
+    } catch (e, stack) {
+      final message = formatApiError(e, endpointName: "news.search");
+      setState(() => _error = message);
+      Error.throwWithStackTrace(Exception(message), stack);
     } finally {
       setState(() => _isLoading = false);
     }

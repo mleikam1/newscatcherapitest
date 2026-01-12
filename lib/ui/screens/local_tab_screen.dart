@@ -9,6 +9,7 @@ import 'article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
 import '../widgets/paging_footer.dart';
 import '../widgets/section_header.dart';
+import '../widgets/error_utils.dart';
 import '../widgets/story_list_row.dart';
 
 class LocalTabScreen extends StatefulWidget {
@@ -64,9 +65,7 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
       final response = await widget.local.localLatestNearMe(
         lat: _lastLat!,
         lon: _lastLon!,
-        page: nextPage,
         pageSize: _pageSize,
-        includeNlp: true,
       );
       final rawArticles =
           (response.json?["articles"] as List<dynamic>?) ?? const [];
@@ -80,10 +79,12 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
         _section.page = nextPage;
         _section.hasMore = parsed.length >= _pageSize;
       });
-    } catch (e) {
+    } catch (e, stack) {
+      final message = formatApiError(e, endpointName: "local.search");
       setState(() {
-        _section.error = "Unable to load local stories.";
+        _section.error = message;
       });
+      Error.throwWithStackTrace(Exception(message), stack);
     } finally {
       setState(() => _section.isLoading = false);
     }
@@ -139,7 +140,7 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
             padding: EdgeInsets.symmetric(vertical: 32),
             child: Center(child: CircularProgressIndicator()),
           )
-        else if (_section.items.isEmpty)
+        else if (_section.items.isEmpty && _section.error == null)
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Text("No local stories yet."),
