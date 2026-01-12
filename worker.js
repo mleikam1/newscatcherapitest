@@ -2,9 +2,15 @@ const NEWS_API_BASE = "https://api.newscatcherapi.com/v3";
 const US_COUNTRY = "US";
 const DEFAULT_LANG = "en";
 const MAX_LOG_BODY = 800;
+const DEFAULT_PAGE_SIZE = 50;
+const MIN_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 100;
+const DEFAULT_FRESHNESS_HOURS = 24;
+const BREAKING_FRESHNESS_HOURS = 2;
 
 const FORBIDDEN_PARAMS = new Set(["location", "lat", "lon", "geo"]);
 const LOCAL_ALLOWED_PARAMS = new Set(["location", "lat", "lon"]);
+const SEARCH_ALLOWED_PARAMS = new Set(["location", "lat", "lon", "geo"]);
 
 const STATE_NAME_BY_CODE = {
   AL: "Alabama",
@@ -60,10 +66,14 @@ const STATE_NAME_BY_CODE = {
   DC: "District of Columbia",
 };
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+      ...headers,
+    },
   });
 }
 
@@ -89,6 +99,130 @@ function truncateBody(body) {
   if (!body) return "";
   if (body.length <= MAX_LOG_BODY) return body;
   return body.slice(0, MAX_LOG_BODY);
+}
+
+function clampPageSize(value) {
+  if (!Number.isFinite(value)) return DEFAULT_PAGE_SIZE;
+  if (value < MIN_PAGE_SIZE) return MIN_PAGE_SIZE;
+  return Math.min(value, MAX_PAGE_SIZE);
+}
+
+function parseNumber(value) {
+  if (value === null || value === undefined || value === "") return NaN;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function ensurePageParams(params) {
+  const requestedPageSize = parseNumber(params.get("page_size"));
+  const pageSize = clampPageSize(requestedPageSize);
+  const requestedPage = parseNumber(params.get("page"));
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  params.set("page_size", String(pageSize));
+  params.set("page", String(page));
+  return { page, pageSize };
+}
+
+function ensureBodyPageParams(body) {
+  const requestedPageSize = parseNumber(body.page_size ?? body.pageSize);
+  const pageSize = clampPageSize(requestedPageSize);
+  const requestedPage = parseNumber(body.page ?? body.pageNumber);
+  const page = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  body.page_size = pageSize;
+  body.page = page;
+  return { page, pageSize };
+}
+
+function ensureSortParams(params) {
+  if (!params.has("sort_by")) {
+    params.set("sort_by", "published_date");
+  }
+  if (!params.has("order")) {
+    params.set("order", "desc");
+  }
+}
+
+function ensureBodySortParams(body) {
+  if (!body.sort_by) {
+    body.sort_by = "published_date";
+  }
+  if (!body.order) {
+    body.order = "desc";
+  }
+}
+
+function ensureFreshnessParams(params, freshnessHours) {
+  const now = new Date();
+  const existingFrom = params.get("from");
+  const existingTo = params.get("to");
+  const to = existingTo ?? now.toISOString();
+  const from =
+    existingFrom ??
+    new Date(now.getTime() - freshnessHours * 60 * 60 * 1000).toISOString();
+  params.set("from", from);
+  params.set("to", to);
+  return { from, to };
+}
+
+function ensureBodyFreshnessParams(body, freshnessHours) {
+  const now = new Date();
+  const existingFrom = body.from;
+  const existingTo = body.to;
+  const to = existingTo ?? now.toISOString();
+  const from =
+    existingFrom ??
+    new Date(now.getTime() - freshnessHours * 60 * 60 * 1000).toISOString();
+  body.from = from;
+  body.to = to;
+  return { from, to };
+}
+
+function ensureClustering(params) {
+  if (!params.has("clustering_enabled")) {
+    params.set("clustering_enabled", "true");
+  }
+}
+
+function ensureDeduplication(params) {
+  if (!params.has("deduplication_enabled")) {
+    params.set("deduplication_enabled", "true");
+  }
+}
+
+function buildDebugHeaders({
+  requestId,
+  routeName,
+  params,
+  page,
+  pageSize,
+  freshness,
+}) {
+  const headers = {
+    "x-news-request-id": requestId ?? "n/a",
+    "x-news-route": routeName ?? "unknown",
+  };
+  if (params) {
+    try {
+      headers["x-news-effective-query"] = JSON.stringify(params).slice(0, 1800);
+    } catch (error) {
+      headers["x-news-effective-query"] = "unavailable";
+    }
+  }
+  if (page) headers["x-news-page"] = String(page);
+  if (pageSize) headers["x-news-page-size"] = String(pageSize);
+  if (freshness?.from) headers["x-news-freshness-from"] = freshness.from;
+  if (freshness?.to) headers["x-news-freshness-to"] = freshness.to;
+  return headers;
+}
+
+function extractDebugHeaders(response) {
+  const headers = {};
+  for (const [key, value] of response.headers.entries()) {
+    if (key.startsWith("x-news-")) {
+      headers[key] = value;
+    }
+  }
+  return headers;
 }
 
 function getRequestId(request) {
@@ -262,6 +396,7 @@ async function fetchNewsApi({
   routeName,
   allowedParams,
   filterOptions,
+  defaults,
 }) {
   const token = env.NEWS_API_TOKEN;
   if (!token) {
@@ -281,8 +416,32 @@ async function fetchNewsApi({
   upstreamUrl.pathname = path.startsWith("/") ? path : normalizeApiPath(path);
 
   const params = new URLSearchParams(query ?? undefined);
+  let page;
+  let pageSize;
+  let freshness;
+  let debugParams;
+  if (!body) {
+    if (defaults?.freshnessHours) {
+      freshness = ensureFreshnessParams(params, defaults.freshnessHours);
+    }
+    if (defaults?.enforceSort) {
+      ensureSortParams(params);
+    }
+    if (defaults?.enforcePagination) {
+      const paging = ensurePageParams(params);
+      page = paging.page;
+      pageSize = paging.pageSize;
+    }
+    if (defaults?.enableClustering) {
+      ensureClustering(params);
+    }
+    if (defaults?.enableDeduplication) {
+      ensureDeduplication(params);
+    }
+  }
   removeForbiddenParams(params, allowedParams);
   upstreamUrl.search = params.toString();
+  debugParams = sanitizeParams(params, allowedParams);
 
   const headers = new Headers({
     "x-api-key": token,
@@ -293,16 +452,46 @@ async function fetchNewsApi({
   const init = {
     method: body ? "POST" : "GET",
     headers,
+    cf: {
+      cacheTtl: 0,
+      cacheEverything: false,
+    },
   };
   if (body) {
     const sanitizedBody = { ...body };
+    let bodyPage;
+    let bodyPageSize;
+    let bodyFreshness;
+    if (defaults?.freshnessHours) {
+      bodyFreshness = ensureBodyFreshnessParams(sanitizedBody, defaults.freshnessHours);
+    }
+    if (defaults?.enforceSort) {
+      ensureBodySortParams(sanitizedBody);
+    }
+    if (defaults?.enforcePagination) {
+      const paging = ensureBodyPageParams(sanitizedBody);
+      bodyPage = paging.page;
+      bodyPageSize = paging.pageSize;
+    }
     for (const key of Object.keys(sanitizedBody)) {
       if (FORBIDDEN_PARAMS.has(key) && !(allowedParams ?? new Set()).has(key)) {
         delete sanitizedBody[key];
       }
     }
+    debugParams = sanitizedBody;
+    if (!page && bodyPage) page = bodyPage;
+    if (!pageSize && bodyPageSize) pageSize = bodyPageSize;
+    if (!freshness && bodyFreshness) freshness = bodyFreshness;
     init.body = JSON.stringify(sanitizedBody);
   }
+  const debugHeaders = buildDebugHeaders({
+    requestId,
+    routeName,
+    params: debugParams,
+    page,
+    pageSize,
+    freshness,
+  });
 
   console.log(
     `News API → ${init.method} ${upstreamUrl.toString()} (route=${routeName ?? path}, request=${requestId ?? "n/a"})`,
@@ -348,12 +537,13 @@ async function fetchNewsApi({
         request_id: requestId,
       },
       upstreamResponse.status,
+      debugHeaders,
     );
   }
 
   try {
     const payload = await upstreamResponse.json();
-    return jsonResponse(withFilteredArticles(payload, filterOptions), 200);
+    return jsonResponse(withFilteredArticles(payload, filterOptions), 200, debugHeaders);
   } catch (error) {
     const bodyText = await upstreamResponse.text();
     logUpstreamFailure({
@@ -373,6 +563,7 @@ async function fetchNewsApi({
         request_id: requestId,
       },
       502,
+      debugHeaders,
     );
   }
 }
@@ -463,7 +654,7 @@ async function handleLocalNews(request, env) {
     console.log(`Local news payload parse error: ${error}`);
   }
 
-  const pageSize = Number(payload.page_size ?? payload.pageSize ?? 20);
+  const pageSize = Number(payload.page_size ?? payload.pageSize ?? DEFAULT_PAGE_SIZE);
   const page = Number(payload.page ?? 1);
   const lang = getSelectedLanguage({ body: payload });
 
@@ -480,7 +671,7 @@ async function handleLocalNews(request, env) {
         lon: longitude,
         radius: Number.isFinite(radiusKm) ? radiusKm : 50,
         lang,
-        page_size: Number.isFinite(pageSize) ? pageSize : 20,
+        page_size: Number.isFinite(pageSize) ? clampPageSize(pageSize) : DEFAULT_PAGE_SIZE,
         page: Number.isFinite(page) ? page : 1,
       },
       requestId,
@@ -489,8 +680,18 @@ async function handleLocalNews(request, env) {
       filterOptions: {
         lang,
       },
+      defaults: {
+        freshnessHours: DEFAULT_FRESHNESS_HOURS,
+        enforcePagination: true,
+        enforceSort: true,
+      },
     });
-    return ensureEmptyReason(response, "No local articles found near you.");
+    if (response.status === 200) {
+      return ensureEmptyReason(response, "No local articles found near you.");
+    }
+    console.log(
+      `Local news upstream failed; falling back to search (request=${requestId}).`,
+    );
   }
 
   const q = buildLocalQuery({
@@ -503,8 +704,9 @@ async function handleLocalNews(request, env) {
     path: "/search",
     query: {
       q,
+      countries: US_COUNTRY,
       lang,
-      page_size: String(Number.isFinite(pageSize) ? pageSize : 20),
+      page_size: String(Number.isFinite(pageSize) ? clampPageSize(pageSize) : DEFAULT_PAGE_SIZE),
       page: String(Number.isFinite(page) ? page : 1),
     },
     requestId,
@@ -512,6 +714,13 @@ async function handleLocalNews(request, env) {
     filterOptions: {
       lang,
       countries: [US_COUNTRY],
+    },
+    defaults: {
+      freshnessHours: DEFAULT_FRESHNESS_HOURS,
+      enforcePagination: true,
+      enforceSort: true,
+      enableClustering: true,
+      enableDeduplication: true,
     },
   });
   return ensureEmptyReason(response, "No local articles matched this location.");
@@ -538,6 +747,11 @@ async function handleBreakingNews(request, env) {
     requestId,
     routeName: "news.breaking",
     filterOptions,
+    defaults: {
+      freshnessHours: BREAKING_FRESHNESS_HOURS,
+      enforcePagination: true,
+      enforceSort: true,
+    },
   });
 
   if (primaryResponse.status !== 200) {
@@ -550,40 +764,30 @@ async function handleBreakingNews(request, env) {
   } catch (error) {
     console.log(`Breaking news parse error: ${error}`);
   }
-  const articles = filterArticles(primaryPayload?.articles ?? [], filterOptions);
-  if (articles.length > 0) {
-    return jsonResponse({ ...primaryPayload, articles }, 200);
+  const debugHeaders = extractDebugHeaders(primaryResponse);
+  const now = Date.now();
+  const articles = filterArticles(primaryPayload?.articles ?? [], filterOptions).filter(
+    (article) => {
+      if (!article?.is_breaking_news) return false;
+      const published = Date.parse(article?.published_date ?? "");
+      if (!Number.isFinite(published)) return false;
+      const ageMs = now - published;
+      return ageMs >= 0 && ageMs <= BREAKING_FRESHNESS_HOURS * 60 * 60 * 1000;
+    },
+  );
+  if (articles.length === 0) {
+    return jsonResponse(
+      {
+        ...primaryPayload,
+        articles: [],
+        reason: "No breaking stories in the last 2 hours.",
+      },
+      200,
+      debugHeaders,
+    );
   }
 
-  console.log(
-    `Breaking news empty; falling back to latest headlines (request=${requestId}).`,
-  );
-  const fallbackResponse = await fetchNewsApi({
-    env,
-    path: "/latest_headlines",
-    query: {
-      countries: filterOptions.countries.join(","),
-      lang,
-      page_size: "10",
-      page: "1",
-    },
-    requestId,
-    routeName: "news.breaking.fallback",
-    filterOptions,
-  });
-
-  if (fallbackResponse.status !== 200) {
-    return fallbackResponse;
-  }
-
-  const fallbackPayload = await fallbackResponse.clone().json();
-  return jsonResponse(
-    {
-      ...fallbackPayload,
-      fallback: "latest_headlines",
-    },
-    200,
-  );
+  return jsonResponse({ ...primaryPayload, articles }, 200, debugHeaders);
 }
 
 function normalizeSearchParams(params) {
@@ -605,6 +809,9 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
   upstreamUrl.pathname = normalizeApiPath(pathSuffix);
 
   const params = new URLSearchParams(url.search);
+  let debugFreshness;
+  let debugPaging;
+  const allowedParams = pathSuffix === "/search" ? SEARCH_ALLOWED_PARAMS : undefined;
   if (pathSuffix === "/search") {
     normalizeSearchParams(params);
     const q = params.get("q");
@@ -620,7 +827,19 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
       );
     }
   }
-  removeForbiddenParams(params);
+  if (pathSuffix === "/search" || pathSuffix === "/latest_headlines") {
+    debugFreshness = ensureFreshnessParams(params, DEFAULT_FRESHNESS_HOURS);
+    ensureSortParams(params);
+    debugPaging = ensurePageParams(params);
+    ensureClustering(params);
+    ensureDeduplication(params);
+  }
+  if (pathSuffix === "/breaking") {
+    debugFreshness = ensureFreshnessParams(params, BREAKING_FRESHNESS_HOURS);
+    ensureSortParams(params);
+    debugPaging = ensurePageParams(params);
+  }
+  removeForbiddenParams(params, allowedParams);
   upstreamUrl.search = params.toString();
 
   const token = env.NEWS_API_TOKEN;
@@ -644,6 +863,10 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
   const init = {
     method: request.method,
     headers,
+    cf: {
+      cacheTtl: 0,
+      cacheEverything: false,
+    },
   };
 
   let body;
@@ -658,7 +881,7 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
     }
     if (body) {
       for (const key of Object.keys(body)) {
-        if (FORBIDDEN_PARAMS.has(key)) {
+        if (FORBIDDEN_PARAMS.has(key) && !(allowedParams ?? new Set()).has(key)) {
           delete body[key];
         }
       }
@@ -695,7 +918,7 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
     const upstreamBody = await upstreamResponse.text();
     logUpstreamFailure({
       endpoint: pathSuffix,
-      params: sanitizeParams(params),
+      params: sanitizeParams(params, allowedParams),
       status: upstreamResponse.status,
       body: upstreamBody,
       requestId,
@@ -710,6 +933,14 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
         request_id: requestId,
       },
       upstreamResponse.status,
+      buildDebugHeaders({
+        requestId,
+        routeName: "proxy",
+        params: sanitizeParams(params, allowedParams),
+        page: debugPaging?.page,
+        pageSize: debugPaging?.pageSize,
+        freshness: debugFreshness,
+      }),
     );
   }
 
@@ -719,12 +950,23 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
       lang: getSelectedLanguage({ query: params }),
       countries: getRequestedCountries({ query: params }),
     };
-    return jsonResponse(withFilteredArticles(payload, filterOptions), 200);
+    return jsonResponse(
+      withFilteredArticles(payload, filterOptions),
+      200,
+      buildDebugHeaders({
+        requestId,
+        routeName: "proxy",
+        params: sanitizeParams(params, allowedParams),
+        page: debugPaging?.page,
+        pageSize: debugPaging?.pageSize,
+        freshness: debugFreshness,
+      }),
+    );
   } catch (error) {
     const bodyText = await upstreamResponse.text();
     logUpstreamFailure({
       endpoint: pathSuffix,
-      params: sanitizeParams(params),
+      params: sanitizeParams(params, allowedParams),
       status: upstreamResponse.status,
       body: bodyText,
       requestId,
@@ -739,6 +981,14 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
         request_id: requestId,
       },
       502,
+      buildDebugHeaders({
+        requestId,
+        routeName: "proxy",
+        params: sanitizeParams(params, allowedParams),
+        page: debugPaging?.page,
+        pageSize: debugPaging?.pageSize,
+        freshness: debugFreshness,
+      }),
     );
   }
 }

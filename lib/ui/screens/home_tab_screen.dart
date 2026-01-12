@@ -26,7 +26,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   final _breakingNews = _SectionState();
   final _latestNews = _SectionState();
 
-  static const int _pageSize = 30;
+  static const int _pageSize = 50;
   static const int _maxPages = 3;
   String _language = ArticleFilter.requiredLanguage;
   bool _initialized = false;

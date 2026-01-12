@@ -37,13 +37,6 @@ class ContentAggregationManager {
     "entertainment",
   ];
 
-  static const List<String> _breakingKeywords = [
-    "breaking",
-    "just in",
-    "developing",
-    "live updates",
-  ];
-
   Future<AggregatedFeedResult> fetchLatestHeadlinesPage({
     required int page,
     required int pageSize,
@@ -190,7 +183,7 @@ class ContentAggregationManager {
       final articles = _parseArticles(response);
       final filtered = ArticleFilter.filterAndSort(
         articles,
-        maxAge: ArticleFilter.globalMaxAge,
+        maxAge: const Duration(hours: 2),
         context: "breaking",
       );
       final breaking = filtered
@@ -207,21 +200,11 @@ class ContentAggregationManager {
   }
 
   bool _isBreaking(Article article) {
-    if (article.isBreakingNews) return true;
+    if (!article.isBreakingNews) return false;
     final published = ArticleFilter.parsePublishedDate(article);
-    if (published != null) {
-      final age = DateTime.now().toUtc().difference(published);
-      if (age <= const Duration(hours: 2)) {
-        return true;
-      }
-    }
-    final text = [
-      article.title,
-      article.description,
-      article.excerpt,
-      article.summary,
-    ].whereType<String>().join(" ").toLowerCase();
-    return _breakingKeywords.any((keyword) => text.contains(keyword));
+    if (published == null) return false;
+    final age = DateTime.now().toUtc().difference(published);
+    return age <= const Duration(hours: 2);
   }
 
   List<Article> _parseArticles(ApiResponse response) {

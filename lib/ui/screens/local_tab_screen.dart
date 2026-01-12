@@ -25,7 +25,7 @@ class LocalTabScreen extends StatefulWidget {
 
 class _LocalTabScreenState extends State<LocalTabScreen> {
   final _section = _SectionState();
-  static const int _pageSize = 30;
+  static const int _pageSize = 50;
   static const int _maxPages = 3;
 
   String? _city;
@@ -177,7 +177,6 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
       latitude: _latitude,
       longitude: _longitude,
       language: _language,
-      country: ArticleFilter.requiredCountry,
       radiusMiles: radiusMiles,
       page: page,
       pageSize: _pageSize,

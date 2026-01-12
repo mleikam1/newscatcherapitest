@@ -27,7 +27,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  static const int _pageSize = 30;
+  static const int _pageSize = 50;
   static const int _maxPages = 3;
 
   List<Article> _results = [];
