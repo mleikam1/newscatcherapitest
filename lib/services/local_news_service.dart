@@ -8,20 +8,6 @@ class LocalNewsService {
   static const String _sources = "/sources";
   static const String _searchBy = "/search_by";
   static const int _defaultPageSize = 50;
-  static const Duration _defaultFreshness = Duration(hours: 24);
-
-  String _toIso(DateTime dateTime) => dateTime.toUtc().toIso8601String();
-
-  void _applyFreshnessParams(Map<String, dynamic> body, Duration window) {
-    final now = DateTime.now().toUtc();
-    body["from"] = _toIso(now.subtract(window));
-    body["to"] = _toIso(now);
-  }
-
-  void _applySortParams(Map<String, dynamic> body) {
-    body["sort_by"] = "published_date";
-    body["order"] = "desc";
-  }
 
   void _requirePositive(String field, int value) {
     if (value <= 0) {
@@ -58,8 +44,6 @@ class LocalNewsService {
       "page": page,
       "page_size": pageSize,
     };
-    _applyFreshnessParams(body, _defaultFreshness);
-    _applySortParams(body);
     if (latitude != null && longitude != null) {
       body["lat"] = latitude;
       body["lon"] = longitude;

@@ -1,10 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
-import '../../app_state.dart';
 import '../../models/article.dart';
 import '../../services/api_client.dart';
-import '../../services/article_filter.dart';
 import '../../services/news_service.dart';
 import 'article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
@@ -36,19 +32,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   bool _hasMore = true;
   String? _error;
   String? _query;
-  String _language = ArticleFilter.requiredLanguage;
-
   bool get _hasSearched => _query != null && _query!.isNotEmpty;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final appState = context.watch<AppState>();
-    _language = ArticleFilter.requiredLanguage;
-    if (appState.selectedLanguage != _language) {
-      debugPrint("Search language overridden to ${ArticleFilter.requiredLanguage}.");
-    }
-  }
 
   @override
   void dispose() {
@@ -100,12 +84,8 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     try {
       final ApiResponse response = await widget.news.search(
         q: query,
-        countries: ArticleFilter.requiredCountry,
-        lang: _language,
         page: nextPage,
         pageSize: _pageSize,
-        sortBy: "published_date",
-        order: "desc",
       );
       final errorMessage = extractApiMessage(response);
       if (errorMessage != null) {
@@ -121,16 +101,11 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
           .toList();
-      final filtered = ArticleFilter.filterAndSort(
-        parsed,
-        maxAge: ArticleFilter.globalMaxAge,
-        context: "search",
-      );
-      final merged = _mergeUnique(_results, filtered);
+      final merged = _mergeUnique(_results, parsed);
       setState(() {
         _results = merged;
         _page = nextPage;
-        _hasMore = filtered.length >= _pageSize && nextPage < _maxPages;
+        _hasMore = parsed.length >= _pageSize && nextPage < _maxPages;
       });
     } catch (e, stack) {
       final message = formatApiError(e, endpointName: "news.search");

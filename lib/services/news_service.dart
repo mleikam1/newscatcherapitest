@@ -4,37 +4,16 @@ class NewsService {
   final ApiClient _client;
   NewsService(this._client);
 
-  // News API v3 paths (common patterns)
-  // If your swagger differs slightly, adjust the path constants here only.
+  // Worker API paths.
+  // If your worker path differs, adjust the path constants here only.
+  static const String _home = "/home";
   static const String _search = "/search";
-  static const String _latest = "/latest_headlines";
-  static const String _breaking = "/breaking";
   static const String _authors = "/authors";
   static const String _similar = "/search_similar";
   static const String _sources = "/sources";
   static const String _agg = "/aggregation_count";
   static const String _subscription = "/subscription";
   static const int _defaultPageSize = 50;
-  static const String _defaultCountry = "US";
-  static const String _defaultLanguage = "en";
-  static const Duration _defaultFreshness = Duration(hours: 24);
-  static const Duration _breakingFreshness = Duration(hours: 2);
-
-  String _toIso(DateTime dateTime) => dateTime.toUtc().toIso8601String();
-
-  void _applyFreshnessParams(
-    Map<String, String> query,
-    Duration window,
-  ) {
-    final now = DateTime.now().toUtc();
-    query["from"] = _toIso(now.subtract(window));
-    query["to"] = _toIso(now);
-  }
-
-  void _applySortParams(Map<String, String> query) {
-    query["sort_by"] = "published_date";
-    query["order"] = "desc";
-  }
 
   void _requireNonEmpty(String field, String value) {
     if (value.trim().isEmpty) {
@@ -63,13 +42,8 @@ class NewsService {
 
   Future<ApiResponse> search({
     required String q,
-    String? countries,
-    String lang = _defaultLanguage,
     int page = 1,
     int pageSize = _defaultPageSize,
-    String? topic,
-    String? sortBy,
-    String? order,
     Map<String, String>? extraParams,
   }) {
     _requireNonEmpty("q", q);
@@ -77,16 +51,9 @@ class NewsService {
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
       "q": q,
-      "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
-      "lang": lang,
       "page_size": "$pageSize",
       "page": "$page",
     };
-    _applyFreshnessParams(query, _defaultFreshness);
-    _applySortParams(query);
-    if (topic != null && topic.isNotEmpty) query["topic"] = topic;
-    if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
-    if (order != null && order.isNotEmpty) query["order"] = order;
     query["clustering_enabled"] = "true";
     query["deduplication_enabled"] = "true";
     if (extraParams != null && extraParams.isNotEmpty) {
@@ -105,58 +72,38 @@ class NewsService {
   Future<ApiResponse> latestHeadlines({
     int page = 1,
     int pageSize = _defaultPageSize,
-    String? countries,
-    String lang = _defaultLanguage,
-    String? sortBy,
-    String? order,
   }) {
     _requirePositive("page", page);
     _requirePositive("page_size", pageSize);
     final query = <String, String>{
-      "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
-      "lang": lang,
       "page_size": "$pageSize",
       "page": "$page",
     };
-    _applyFreshnessParams(query, _defaultFreshness);
-    _applySortParams(query);
-    if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
-    if (order != null && order.isNotEmpty) query["order"] = order;
     query["clustering_enabled"] = "true";
     query["deduplication_enabled"] = "true";
     return _client
         .get(
           isNews: true,
-          path: _latest,
-          endpointName: "news.latest_headlines",
+          path: _home,
+          endpointName: "news.home",
           query: query,
         )
         .then(_requireArticles);
   }
 
   Future<ApiResponse> breakingNews({
-    String? countries,
-    String lang = _defaultLanguage,
-    String? sortBy,
-    String? order,
     int page = 1,
     int pageSize = _defaultPageSize,
   }) {
     final query = <String, String>{
-      "countries": countries?.isNotEmpty == true ? countries! : _defaultCountry,
-      "lang": lang,
       "page": "$page",
       "page_size": "$pageSize",
     };
-    _applyFreshnessParams(query, _breakingFreshness);
-    _applySortParams(query);
-    if (sortBy != null && sortBy.isNotEmpty) query["sort_by"] = sortBy;
-    if (order != null && order.isNotEmpty) query["order"] = order;
     return _client
         .get(
           isNews: true,
-          path: _breaking,
-          endpointName: "news.breaking_news",
+          path: _home,
+          endpointName: "news.home_breaking",
           query: query,
         )
         .then(_requireArticles);

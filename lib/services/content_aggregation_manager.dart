@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 
 import '../models/article.dart';
 import 'api_client.dart';
-import 'article_filter.dart';
 import 'news_service.dart';
 
 class AggregatedFeedResult {
@@ -29,30 +28,14 @@ class ContentAggregationManager {
 
   final NewsService _news;
 
-  static const List<String> _topics = [
-    "politics",
-    "business",
-    "sports",
-    "tech",
-    "entertainment",
-  ];
-
   Future<AggregatedFeedResult> fetchLatestHeadlinesPage({
     required int page,
     required int pageSize,
-    required String language,
   }) async {
-    if (language.toLowerCase() != ArticleFilter.requiredLanguage) {
-      debugPrint("Overriding language to ${ArticleFilter.requiredLanguage}.");
-    }
     try {
       final response = await _news.latestHeadlines(
-        countries: ArticleFilter.requiredCountry,
-        lang: ArticleFilter.requiredLanguage,
         page: page,
         pageSize: pageSize,
-        sortBy: "published_date",
-        order: "desc",
       );
       final errorMessage = _extractErrorMessage(response);
       if (errorMessage != null) {
@@ -63,12 +46,7 @@ class ContentAggregationManager {
         );
       }
       final articles = _parseArticles(response);
-      final filtered = ArticleFilter.filterAndSort(
-        articles,
-        maxAge: ArticleFilter.globalMaxAge,
-        context: "latest_headlines",
-      );
-      final tagged = filtered
+      final tagged = articles
           .map((article) => article.copyWith(
                 isBreakingNews: _isBreaking(article),
               ))
@@ -91,59 +69,22 @@ class ContentAggregationManager {
   Future<AggregatedFeedResult> fetchHomeFeedPage({
     required int page,
     required int pageSize,
-    required String language,
   }) async {
-    if (language.toLowerCase() != ArticleFilter.requiredLanguage) {
-      debugPrint("Overriding language to ${ArticleFilter.requiredLanguage}.");
-    }
     try {
-      final futures = <Future<ApiResponse>>[
-        _news.latestHeadlines(
-          countries: ArticleFilter.requiredCountry,
-          lang: ArticleFilter.requiredLanguage,
-          page: page,
-          pageSize: pageSize,
-          sortBy: "published_date",
-          order: "desc",
-        ),
-        for (final topic in _topics)
-          _news.search(
-            q: "*",
-            topic: topic,
-            countries: ArticleFilter.requiredCountry,
-            lang: ArticleFilter.requiredLanguage,
-            page: page,
-            pageSize: pageSize,
-            sortBy: "published_date",
-            order: "desc",
-          ),
-      ];
-      final responses = await Future.wait(futures);
-      final articles = <Article>[];
-      final errors = <String>[];
-      for (final response in responses) {
-        final error = _extractErrorMessage(response);
-        if (error != null) {
-          errors.add(error);
-          debugPrint("Aggregation feed error: $error");
-          continue;
-        }
-        articles.addAll(_parseArticles(response));
-      }
-      if (articles.isEmpty && errors.isNotEmpty) {
+      final response = await _news.latestHeadlines(
+        page: page,
+        pageSize: pageSize,
+      );
+      final errorMessage = _extractErrorMessage(response);
+      if (errorMessage != null) {
         return AggregatedFeedResult(
           articles: [],
-          errorMessage: errors.first,
+          errorMessage: errorMessage,
           hasMore: false,
         );
       }
-      final deduped = _dedupeArticles(articles);
-      final filtered = ArticleFilter.filterAndSort(
-        deduped,
-        maxAge: ArticleFilter.globalMaxAge,
-        context: "home_aggregate",
-      );
-      final tagged = filtered
+      final articles = _parseArticles(response);
+      final tagged = _dedupeArticles(articles)
           .map((article) => article.copyWith(
                 isBreakingNews: _isBreaking(article),
               ))
@@ -163,30 +104,15 @@ class ContentAggregationManager {
     }
   }
 
-  Future<BreakingFeedResult> fetchBreakingNews({
-    required String language,
-  }) async {
-    if (language.toLowerCase() != ArticleFilter.requiredLanguage) {
-      debugPrint("Overriding language to ${ArticleFilter.requiredLanguage}.");
-    }
+  Future<BreakingFeedResult> fetchBreakingNews() async {
     try {
-      final response = await _news.breakingNews(
-        countries: ArticleFilter.requiredCountry,
-        lang: ArticleFilter.requiredLanguage,
-        sortBy: "published_date",
-        order: "desc",
-      );
+      final response = await _news.breakingNews();
       final errorMessage = _extractErrorMessage(response);
       if (errorMessage != null) {
         return BreakingFeedResult(articles: [], errorMessage: errorMessage);
       }
       final articles = _parseArticles(response);
-      final filtered = ArticleFilter.filterAndSort(
-        articles,
-        maxAge: const Duration(hours: 2),
-        context: "breaking",
-      );
-      final breaking = filtered
+      final breaking = articles
           .map((article) => article.copyWith(
                 isBreakingNews: _isBreaking(article),
               ))
@@ -200,11 +126,7 @@ class ContentAggregationManager {
   }
 
   bool _isBreaking(Article article) {
-    if (!article.isBreakingNews) return false;
-    final published = ArticleFilter.parsePublishedDate(article);
-    if (published == null) return false;
-    final age = DateTime.now().toUtc().difference(published);
-    return age <= const Duration(hours: 2);
+    return article.isBreakingNews;
   }
 
   List<Article> _parseArticles(ApiResponse response) {

@@ -49,15 +49,11 @@ class _AppScaffoldState extends State<AppScaffold> {
 
     try {
       await _news.latestHeadlines(
-        countries: "US",
-        lang: "en",
         page: 1,
         pageSize: 1,
-        sortBy: "published_date",
-        order: "desc",
       );
     } catch (e) {
-      errors.add(formatApiError(e, endpointName: "news.latest_headlines"));
+      errors.add(formatApiError(e, endpointName: "news.home"));
     }
 
     if (!mounted) return;
