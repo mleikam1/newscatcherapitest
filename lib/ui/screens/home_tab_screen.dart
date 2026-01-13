@@ -17,7 +17,10 @@ class HomeTabScreen extends StatefulWidget {
 }
 
 class _HomeTabScreenState extends State<HomeTabScreen> {
-  final _topStories = _SectionState();
+  List<Article> _articles = [];
+  bool _isLoading = false;
+  String? _error;
+  int? _totalCount;
 
   @override
   void initState() {
@@ -26,71 +29,41 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   }
 
   Future<void> _loadTopStories() {
-    return _loadSection(
-      state: _topStories,
-      loader: () => widget.aggregation.fetchHomeFeedPage(),
-    );
+    return _loadFeed(() => widget.aggregation.fetchHomeFeedPage());
   }
 
-  Future<void> _loadSection({
-    required _SectionState state,
-    required Future<AggregatedFeedResult> Function() loader,
-  }) async {
-    if (state.isLoading) return;
+  Future<void> _loadFeed(
+    Future<AggregatedFeedResult> Function() loader,
+  ) async {
+    if (_isLoading) return;
 
     setState(() {
-      state.isLoading = true;
-      state.error = null;
-      state.items = [];
+      _isLoading = true;
+      _error = null;
+      _articles = [];
+      _totalCount = null;
     });
 
     try {
       final response = await loader();
       final errorMessage = response.errorMessage;
       if (errorMessage != null) {
-        setState(() => state.error = errorMessage);
+        setState(() => _error = errorMessage);
         return;
       }
-      final merged = _mergeUnique(state.items, response.articles);
       setState(() {
-        state.items = merged;
+        _articles = response.articles;
+        _totalCount = response.totalCount;
       });
     } catch (e, stack) {
       final message = "Home tab error: $e";
       setState(() {
-        state.error = message;
+        _error = message;
       });
       debugPrint("Home tab error: $message\n$stack");
     } finally {
-      setState(() => state.isLoading = false);
+      setState(() => _isLoading = false);
     }
-  }
-
-  List<Article> _mergeUnique(List<Article> existing, List<Article> incoming) {
-    final seen = existing.map(_articleKey).toSet();
-    final merged = [...existing];
-    for (final article in incoming) {
-      final key = _articleKey(article);
-      if (seen.add(key)) {
-        merged.add(article);
-      }
-    }
-    return merged;
-  }
-
-  String _articleKey(Article article) {
-    if (article.id != null && article.id!.isNotEmpty) {
-      return article.id!;
-    }
-    final link = article.link;
-    if (link != null && link.isNotEmpty) {
-      final uri = Uri.tryParse(link);
-      if (uri != null) {
-        return "${uri.host.toLowerCase()}${uri.path.toLowerCase()}";
-      }
-      return link;
-    }
-    return "${article.title ?? ""}-${article.publishedDate ?? ""}";
   }
 
   void _openDetail(Article article) {
@@ -107,7 +80,10 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       children: [
         _buildSection(
           title: "Top Stories",
-          state: _topStories,
+          articles: _articles,
+          isLoading: _isLoading,
+          errorMessage: _error,
+          totalCount: _totalCount,
           onRetry: _loadTopStories,
         ),
       ],
@@ -116,36 +92,41 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
   Widget _buildSection({
     required String title,
-    required _SectionState state,
+    required List<Article> articles,
+    required bool isLoading,
+    required String? errorMessage,
+    required int? totalCount,
     required VoidCallback onRetry,
   }) {
-    final items = state.items;
+    final items = articles;
+    final hasCount = totalCount != null;
+    final isEmpty = hasCount ? totalCount == 0 : items.isEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(title: title),
-        if (items.isEmpty) ...[
-          if (state.isLoading)
+        if (isEmpty) ...[
+          if (isLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 32),
               child: Center(child: CircularProgressIndicator()),
             )
-          else if (state.error != null)
+          else if (!hasCount && errorMessage != null)
             ErrorState(
-              message: state.error!,
+              message: errorMessage,
               onAction: onRetry,
             )
           else
             EmptyState(
-              title: "No stories available",
+              title: "No stories to show right now",
               onAction: onRetry,
             ),
         ] else ...[
-          if (state.error != null)
+          if (errorMessage != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Text(state.error!),
+              child: Text(errorMessage),
             ),
           if (items.isNotEmpty) ...[
             HeroStoryCard(
@@ -162,10 +143,4 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       ],
     );
   }
-}
-
-class _SectionState {
-  List<Article> items = [];
-  bool isLoading = false;
-  String? error;
 }
