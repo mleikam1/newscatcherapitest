@@ -28,15 +28,9 @@ class ContentAggregationManager {
 
   final NewsService _news;
 
-  Future<AggregatedFeedResult> fetchLatestHeadlinesPage({
-    required int page,
-    required int pageSize,
-  }) async {
+  Future<AggregatedFeedResult> fetchLatestHeadlinesPage() async {
     try {
-      final response = await _news.latestHeadlines(
-        page: page,
-        pageSize: pageSize,
-      );
+      final response = await _news.latestHeadlines();
       final errorMessage = _extractErrorMessage(response);
       if (errorMessage != null) {
         return AggregatedFeedResult(
@@ -54,7 +48,7 @@ class ContentAggregationManager {
       return AggregatedFeedResult(
         articles: tagged,
         errorMessage: null,
-        hasMore: tagged.length >= pageSize,
+        hasMore: false,
       );
     } catch (e, stack) {
       debugPrint("Latest headlines aggregation error: $e\n$stack");
@@ -66,15 +60,9 @@ class ContentAggregationManager {
     }
   }
 
-  Future<AggregatedFeedResult> fetchHomeFeedPage({
-    required int page,
-    required int pageSize,
-  }) async {
+  Future<AggregatedFeedResult> fetchHomeFeedPage() async {
     try {
-      final response = await _news.latestHeadlines(
-        page: page,
-        pageSize: pageSize,
-      );
+      final response = await _news.latestHeadlines();
       final errorMessage = _extractErrorMessage(response);
       if (errorMessage != null) {
         return AggregatedFeedResult(
@@ -92,7 +80,7 @@ class ContentAggregationManager {
       return AggregatedFeedResult(
         articles: tagged,
         errorMessage: null,
-        hasMore: tagged.length >= pageSize,
+        hasMore: false,
       );
     } catch (e, stack) {
       debugPrint("Home aggregation error: $e\n$stack");
@@ -139,6 +127,7 @@ class ContentAggregationManager {
 
   String? _extractErrorMessage(ApiResponse response) {
     if (response.status == 200) return null;
+    if (response.status == 410) return null;
     final message = response.json?["message"]?.toString();
     return message ?? "API error ${response.status}";
   }
