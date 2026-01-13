@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../models/article.dart';
 import '../../services/api_client.dart';
 import '../../services/news_service.dart';
+import '../../services/article_prioritizer.dart';
 import 'article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
 import '../widgets/paging_footer.dart';
@@ -28,6 +29,8 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   bool _hasMore = true;
   String? _error;
   String? _query;
+  int _currentPage = 1;
+  static const int _pageSize = 20;
   bool get _hasSearched => _query != null && _query!.isNotEmpty;
 
   @override
@@ -52,6 +55,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
       _query = query;
       _results = [];
       _hasMore = true;
+      _currentPage = 1;
       _error = null;
     });
     await _loadMore(reset: true);
@@ -63,14 +67,22 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     final query = _query;
     if (query == null || query.isEmpty) return;
 
+    final nextPage = reset ? 1 : _currentPage + 1;
     setState(() {
       _isLoading = true;
       _error = null;
+      if (reset) {
+        _results = [];
+        _hasMore = true;
+        _currentPage = 1;
+      }
     });
 
     try {
       final ApiResponse response = await widget.news.search(
         q: query,
+        page: nextPage,
+        pageSize: _pageSize,
       );
       final errorMessage = extractApiMessage(response);
       if (errorMessage != null) {
@@ -87,9 +99,11 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
           .map(Article.fromJson)
           .toList();
       final merged = _mergeUnique(_results, parsed);
+      final prioritized = prioritizePreferredPublishers(merged);
       setState(() {
-        _results = merged;
-        _hasMore = false;
+        _results = prioritized;
+        _hasMore = parsed.isNotEmpty;
+        _currentPage = nextPage;
       });
     } catch (e, stack) {
       final message = formatApiError(e, endpointName: "news.search");
@@ -175,7 +189,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
               textInputAction: TextInputAction.search,
               onSubmitted: _submitSearch,
               decoration: InputDecoration(
-                hintText: "Ask for news…",
+                hintText: "Search news",
                 prefixIcon: const Icon(Icons.search),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
@@ -188,7 +202,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
           if (!_hasSearched) ...[
             const SizedBox(height: 12),
             Text(
-              "Try: ‘NFL playoffs’, ‘AI regulation’, ‘Overland Park weather’",
+              "Try: ‘NFL playoffs’, ‘AI regulation’, ‘Search top stories’",
               style: Theme.of(context).textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),
@@ -250,7 +264,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
         ],
         PagingFooter(
           isLoading: _isLoading,
-          hasMore: _hasMore,
+          hasMore: _hasMore && _results.length >= _pageSize,
           onMore: () => _loadMore(),
         ),
       ],

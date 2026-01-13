@@ -23,9 +23,15 @@ class ContentAggregationManager {
 
   final NewsService _news;
 
-  Future<AggregatedFeedResult> fetchHomeFeedPage() async {
+  Future<AggregatedFeedResult> fetchHomeFeedPage({
+    int page = 1,
+    int pageSize = 20,
+  }) async {
     try {
-      final response = await _news.latestHeadlines();
+      final response = await _news.latestHeadlines(
+        page: page,
+        pageSize: pageSize,
+      );
       final errorMessage = _extractErrorMessage(response);
       if (errorMessage != null) {
         return AggregatedFeedResult(
