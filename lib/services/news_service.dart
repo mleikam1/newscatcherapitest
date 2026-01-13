@@ -54,14 +54,4 @@ class NewsService {
         )
         .then(_requireArticles);
   }
-
-  Future<ApiResponse> breakingNews() {
-    return _client
-        .get(
-          isNews: true,
-          path: _home,
-          endpointName: "news.home_breaking",
-        )
-        .then(_requireArticles);
-  }
 }

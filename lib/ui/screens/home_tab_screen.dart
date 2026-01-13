@@ -1,13 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-
-import '../../app_state.dart';
 import '../../models/article.dart';
-import '../../services/article_filter.dart';
 import '../../services/content_aggregation_manager.dart';
 import '../screens/article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
-import '../widgets/paging_footer.dart';
 import '../widgets/section_header.dart';
 import '../widgets/story_list_row.dart';
 import '../widgets/state_message.dart';
@@ -22,99 +17,31 @@ class HomeTabScreen extends StatefulWidget {
 }
 
 class _HomeTabScreenState extends State<HomeTabScreen> {
-  final _topHeadlines = _SectionState();
-  final _breakingNews = _SectionState();
-  final _latestNews = _SectionState();
-
-  String _language = ArticleFilter.requiredLanguage;
-  bool _initialized = false;
+  final _topStories = _SectionState();
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final appState = context.watch<AppState>();
-    final nextLanguage = ArticleFilter.requiredLanguage;
-    if (!_initialized || nextLanguage != _language || appState.selectedLanguage != _language) {
-      _language = nextLanguage;
-      _initialized = true;
-      _loadTopHeadlines();
-      _loadBreakingNews();
-      _loadLatestNews();
-    }
+  void initState() {
+    super.initState();
+    _loadTopStories();
   }
 
-  Future<void> _loadTopHeadlines({bool loadMore = false}) {
+  Future<void> _loadTopStories() {
     return _loadSection(
-      state: _topHeadlines,
-      loader: () => widget.aggregation.fetchLatestHeadlinesPage(),
-      loadMore: loadMore,
-    );
-  }
-
-  Future<void> _loadBreakingNews({bool loadMore = false}) {
-    return _loadBreakingSection(loadMore: loadMore);
-  }
-
-  Future<void> _loadLatestNews({bool loadMore = false}) {
-    return _loadSection(
-      state: _latestNews,
+      state: _topStories,
       loader: () => widget.aggregation.fetchHomeFeedPage(),
-      loadMore: loadMore,
     );
-  }
-
-  Future<void> _loadBreakingSection({required bool loadMore}) async {
-    final state = _breakingNews;
-    if (state.isLoading) return;
-    if (loadMore && !state.hasMore) return;
-
-    setState(() {
-      state.isLoading = true;
-      state.error = null;
-      if (!loadMore) {
-        state.items = [];
-        state.hasMore = true;
-      }
-    });
-
-    try {
-      final response = await widget.aggregation.fetchBreakingNews();
-      final errorMessage = response.errorMessage;
-      if (errorMessage != null) {
-        setState(() => state.error = errorMessage);
-        return;
-      }
-      final merged = _mergeUnique(state.items, response.articles);
-      setState(() {
-        state.items = merged;
-        state.hasMore = false;
-      });
-    } catch (e, stack) {
-      final message = "Breaking news error: $e";
-      setState(() {
-        state.error = message;
-      });
-      debugPrint("Breaking news error: $message\n$stack");
-    } finally {
-      setState(() => state.isLoading = false);
-    }
   }
 
   Future<void> _loadSection({
     required _SectionState state,
     required Future<AggregatedFeedResult> Function() loader,
-    required bool loadMore,
   }) async {
     if (state.isLoading) return;
-    if (loadMore && !state.hasMore) return;
 
     setState(() {
       state.isLoading = true;
       state.error = null;
-      if (!loadMore) {
-        state.items = [];
-        state.hasMore = true;
-      }
+      state.items = [];
     });
 
     try {
@@ -127,7 +54,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       final merged = _mergeUnique(state.items, response.articles);
       setState(() {
         state.items = merged;
-        state.hasMore = response.hasMore;
       });
     } catch (e, stack) {
       final message = "Home tab error: $e";
@@ -180,22 +106,9 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     return ListView(
       children: [
         _buildSection(
-          title: "Top Headlines",
-          state: _topHeadlines,
-          onMore: () => _loadTopHeadlines(loadMore: true),
-          onRetry: () => _loadTopHeadlines(),
-        ),
-        _buildSection(
-          title: "Breaking News",
-          state: _breakingNews,
-          onMore: () => _loadBreakingNews(loadMore: true),
-          onRetry: () => _loadBreakingNews(),
-        ),
-        _buildSection(
-          title: "Latest News",
-          state: _latestNews,
-          onMore: () => _loadLatestNews(loadMore: true),
-          onRetry: () => _loadLatestNews(),
+          title: "Top Stories",
+          state: _topStories,
+          onRetry: _loadTopStories,
         ),
       ],
     );
@@ -204,7 +117,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   Widget _buildSection({
     required String title,
     required _SectionState state,
-    required VoidCallback onMore,
     required VoidCallback onRetry,
   }) {
     final items = state.items;
@@ -226,7 +138,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
             )
           else
             EmptyState(
-              title: "No stories available.",
+              title: "No stories available",
               onAction: onRetry,
             ),
         ] else ...[
@@ -246,11 +158,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
                 onTap: () => _openDetail(article),
               ),
           ],
-          PagingFooter(
-            isLoading: state.isLoading,
-            hasMore: state.hasMore,
-            onMore: onMore,
-          ),
         ],
       ],
     );
@@ -260,6 +167,5 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 class _SectionState {
   List<Article> items = [];
   bool isLoading = false;
-  bool hasMore = true;
   String? error;
 }
