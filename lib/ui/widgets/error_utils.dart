@@ -9,6 +9,7 @@ String formatApiError(Object error, {required String endpointName}) {
 
 String? extractApiMessage(ApiResponse response) {
   if (response.status == 200) return null;
+  if (response.status == 410) return null;
   final json = response.json;
   final message = json?["message"] ?? json?["error"] ?? json?["detail"];
   if (message is String && message.trim().isNotEmpty) {

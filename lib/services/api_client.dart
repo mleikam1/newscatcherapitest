@@ -190,7 +190,9 @@ class ApiClient {
     );
     if (resp.body.trim().isEmpty) {
       final message = "Empty response body.";
-      _diagnostics.recordError(message, status: resp.statusCode);
+      if (resp.statusCode != 410) {
+        _diagnostics.recordError(message, status: resp.statusCode);
+      }
       return ApiResponse(
         status: resp.statusCode,
         json: const {"articles": <dynamic>[]},
@@ -204,7 +206,9 @@ class ApiClient {
         if (resp.statusCode != 200) {
           final message = _truncate(resp.body);
           debugPrint("API error: ${resp.statusCode} $message");
-          _diagnostics.recordError(message, status: resp.statusCode);
+          if (resp.statusCode != 410) {
+            _diagnostics.recordError(message, status: resp.statusCode);
+          }
           return ApiResponse(
             status: resp.statusCode,
             json: decoded,
@@ -222,7 +226,9 @@ class ApiClient {
       if (resp.statusCode != 200) {
         final message = _truncate(resp.body);
         debugPrint("API error: ${resp.statusCode} $message");
-        _diagnostics.recordError(message, status: resp.statusCode);
+        if (resp.statusCode != 410) {
+          _diagnostics.recordError(message, status: resp.statusCode);
+        }
         return ApiResponse(
           status: resp.statusCode,
           json: const {"articles": <dynamic>[]},

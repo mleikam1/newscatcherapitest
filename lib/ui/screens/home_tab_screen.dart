@@ -26,8 +26,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   final _breakingNews = _SectionState();
   final _latestNews = _SectionState();
 
-  static const int _pageSize = 50;
-  static const int _maxPages = 3;
   String _language = ArticleFilter.requiredLanguage;
   bool _initialized = false;
 
@@ -48,10 +46,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   Future<void> _loadTopHeadlines({bool loadMore = false}) {
     return _loadSection(
       state: _topHeadlines,
-      loader: (page) => widget.aggregation.fetchLatestHeadlinesPage(
-        page: page,
-        pageSize: _pageSize,
-      ),
+      loader: () => widget.aggregation.fetchLatestHeadlinesPage(),
       loadMore: loadMore,
     );
   }
@@ -63,10 +58,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   Future<void> _loadLatestNews({bool loadMore = false}) {
     return _loadSection(
       state: _latestNews,
-      loader: (page) => widget.aggregation.fetchHomeFeedPage(
-        page: page,
-        pageSize: _pageSize,
-      ),
+      loader: () => widget.aggregation.fetchHomeFeedPage(),
       loadMore: loadMore,
     );
   }
@@ -76,24 +68,17 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     if (state.isLoading) return;
     if (loadMore && !state.hasMore) return;
 
-    final nextPage = loadMore ? state.page + 1 : 1;
-    if (nextPage > _maxPages) {
-      setState(() => state.hasMore = false);
-      return;
-    }
     setState(() {
       state.isLoading = true;
       state.error = null;
       if (!loadMore) {
         state.items = [];
         state.hasMore = true;
-        state.page = 0;
       }
     });
 
     try {
-      final response = await widget.aggregation.fetchBreakingNews(
-      );
+      final response = await widget.aggregation.fetchBreakingNews();
       final errorMessage = response.errorMessage;
       if (errorMessage != null) {
         setState(() => state.error = errorMessage);
@@ -102,7 +87,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       final merged = _mergeUnique(state.items, response.articles);
       setState(() {
         state.items = merged;
-        state.page = nextPage;
         state.hasMore = false;
       });
     } catch (e, stack) {
@@ -118,29 +102,23 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
   Future<void> _loadSection({
     required _SectionState state,
-    required Future<AggregatedFeedResult> Function(int page) loader,
+    required Future<AggregatedFeedResult> Function() loader,
     required bool loadMore,
   }) async {
     if (state.isLoading) return;
     if (loadMore && !state.hasMore) return;
 
-    final nextPage = loadMore ? state.page + 1 : 1;
-    if (nextPage > _maxPages) {
-      setState(() => state.hasMore = false);
-      return;
-    }
     setState(() {
       state.isLoading = true;
       state.error = null;
       if (!loadMore) {
         state.items = [];
         state.hasMore = true;
-        state.page = 0;
       }
     });
 
     try {
-      final response = await loader(nextPage);
+      final response = await loader();
       final errorMessage = response.errorMessage;
       if (errorMessage != null) {
         setState(() => state.error = errorMessage);
@@ -149,8 +127,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       final merged = _mergeUnique(state.items, response.articles);
       setState(() {
         state.items = merged;
-        state.page = nextPage;
-        state.hasMore = response.hasMore && nextPage < _maxPages;
+        state.hasMore = response.hasMore;
       });
     } catch (e, stack) {
       final message = "Home tab error: $e";
@@ -282,7 +259,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
 class _SectionState {
   List<Article> items = [];
-  int page = 0;
   bool isLoading = false;
   bool hasMore = true;
   String? error;

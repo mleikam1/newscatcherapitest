@@ -3,10 +3,8 @@ import 'package:provider/provider.dart';
 
 import '../services/api_client.dart';
 import '../services/content_aggregation_manager.dart';
-import '../services/local_news_service.dart';
 import '../services/news_service.dart';
 import 'screens/home_tab_screen.dart';
-import 'screens/local_tab_screen.dart';
 import 'screens/search_tab_screen.dart';
 import 'widgets/debug_banner.dart';
 import 'widgets/error_utils.dart';
@@ -21,7 +19,6 @@ class AppScaffold extends StatefulWidget {
 class _AppScaffoldState extends State<AppScaffold> {
   late final ApiClient _client;
   late final NewsService _news;
-  late final LocalNewsService _local;
   late final ContentAggregationManager _aggregation;
 
   int _tabIndex = 0;
@@ -32,7 +29,6 @@ class _AppScaffoldState extends State<AppScaffold> {
     super.initState();
     _client = ApiClient();
     _news = NewsService(_client);
-    _local = LocalNewsService(_client);
     _aggregation = ContentAggregationManager(_news);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _runSmokeTests();
@@ -42,16 +38,7 @@ class _AppScaffoldState extends State<AppScaffold> {
   Future<void> _runSmokeTests() async {
     final errors = <String>[];
     try {
-      await _news.healthCheck();
-    } catch (e) {
-      errors.add(formatApiError(e, endpointName: "news.__health"));
-    }
-
-    try {
-      await _news.latestHeadlines(
-        page: 1,
-        pageSize: 1,
-      );
+      await _news.latestHeadlines();
     } catch (e) {
       errors.add(formatApiError(e, endpointName: "news.home"));
     }
@@ -105,7 +92,7 @@ class _AppScaffoldState extends State<AppScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    final titles = ["newscatcher test", "Local", "Search"];
+    final titles = ["newscatcher test", "Search"];
     final diagnostics = context.watch<ApiDiagnostics>();
 
     return Scaffold(
@@ -122,7 +109,6 @@ class _AppScaffoldState extends State<AppScaffold> {
               index: _tabIndex,
               children: [
                 HomeTabScreen(aggregation: _aggregation),
-                LocalTabScreen(local: _local),
                 SearchTabScreen(news: _news),
               ],
             ),
@@ -136,10 +122,6 @@ class _AppScaffoldState extends State<AppScaffold> {
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
             label: "Home",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.place_outlined),
-            label: "Local",
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.search),

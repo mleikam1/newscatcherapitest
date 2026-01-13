@@ -23,11 +23,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
-  static const int _pageSize = 50;
-  static const int _maxPages = 3;
-
   List<Article> _results = [];
-  int _page = 0;
   bool _isLoading = false;
   bool _hasMore = true;
   String? _error;
@@ -48,14 +44,12 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
         _error = "Please enter a search term.";
         _results = [];
         _hasMore = false;
-        _page = 0;
         _query = null;
       });
       return;
     }
     setState(() {
       _query = query;
-      _page = 0;
       _results = [];
       _hasMore = true;
       _error = null;
@@ -65,17 +59,10 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
 
   Future<void> _loadMore({bool reset = false}) async {
     if (_isLoading) return;
-    if (!_hasMore) return;
+    if (!_hasMore && !reset) return;
     final query = _query;
     if (query == null || query.isEmpty) return;
 
-    final nextPage = reset ? 1 : _page + 1;
-    if (nextPage > _maxPages) {
-      setState(() {
-        _hasMore = false;
-      });
-      return;
-    }
     setState(() {
       _isLoading = true;
       _error = null;
@@ -84,8 +71,6 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
     try {
       final ApiResponse response = await widget.news.search(
         q: query,
-        page: nextPage,
-        pageSize: _pageSize,
       );
       final errorMessage = extractApiMessage(response);
       if (errorMessage != null) {
@@ -104,8 +89,7 @@ class _SearchTabScreenState extends State<SearchTabScreen> {
       final merged = _mergeUnique(_results, parsed);
       setState(() {
         _results = merged;
-        _page = nextPage;
-        _hasMore = parsed.length >= _pageSize && nextPage < _maxPages;
+        _hasMore = false;
       });
     } catch (e, stack) {
       final message = formatApiError(e, endpointName: "news.search");
