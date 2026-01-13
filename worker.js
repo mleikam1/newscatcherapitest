@@ -5,12 +5,19 @@ const MAX_LOG_BODY = 800;
 const DEFAULT_PAGE_SIZE = 50;
 const MIN_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
-const DEFAULT_FRESHNESS_HOURS = 24;
-const BREAKING_FRESHNESS_HOURS = 2;
 
 const FORBIDDEN_PARAMS = new Set(["location", "lat", "lon", "geo"]);
 const LOCAL_ALLOWED_PARAMS = new Set(["location", "lat", "lon"]);
 const SEARCH_ALLOWED_PARAMS = new Set(["location", "lat", "lon", "geo"]);
+const BASE_ALLOWED_PARAMS = new Set([
+  "countries",
+  "lang",
+  "sort_by",
+  "order",
+  "page",
+  "page_size",
+]);
+const SEARCH_EXTRA_PARAMS = new Set(["q"]);
 
 const STATE_NAME_BY_CODE = {
   AL: "Alabama",
@@ -95,6 +102,23 @@ function removeForbiddenParams(params, allowedParams = new Set()) {
   }
 }
 
+function filterParamsToAllowlist(params, allowlist) {
+  for (const key of params.keys()) {
+    if (!allowlist.has(key)) {
+      params.delete(key);
+    }
+  }
+}
+
+function filterBodyToAllowlist(body, allowlist) {
+  if (!body) return;
+  for (const key of Object.keys(body)) {
+    if (!allowlist.has(key)) {
+      delete body[key];
+    }
+  }
+}
+
 function truncateBody(body) {
   if (!body) return "";
   if (body.length <= MAX_LOG_BODY) return body;
@@ -151,52 +175,7 @@ function ensureBodySortParams(body) {
   }
 }
 
-function ensureFreshnessParams(params, freshnessHours) {
-  const now = new Date();
-  const existingFrom = params.get("from");
-  const existingTo = params.get("to");
-  const to = existingTo ?? now.toISOString();
-  const from =
-    existingFrom ??
-    new Date(now.getTime() - freshnessHours * 60 * 60 * 1000).toISOString();
-  params.set("from", from);
-  params.set("to", to);
-  return { from, to };
-}
-
-function ensureBodyFreshnessParams(body, freshnessHours) {
-  const now = new Date();
-  const existingFrom = body.from;
-  const existingTo = body.to;
-  const to = existingTo ?? now.toISOString();
-  const from =
-    existingFrom ??
-    new Date(now.getTime() - freshnessHours * 60 * 60 * 1000).toISOString();
-  body.from = from;
-  body.to = to;
-  return { from, to };
-}
-
-function ensureClustering(params) {
-  if (!params.has("clustering_enabled")) {
-    params.set("clustering_enabled", "true");
-  }
-}
-
-function ensureDeduplication(params) {
-  if (!params.has("deduplication_enabled")) {
-    params.set("deduplication_enabled", "true");
-  }
-}
-
-function buildDebugHeaders({
-  requestId,
-  routeName,
-  params,
-  page,
-  pageSize,
-  freshness,
-}) {
+function buildDebugHeaders({ requestId, routeName, params, page, pageSize }) {
   const headers = {
     "x-news-request-id": requestId ?? "n/a",
     "x-news-route": routeName ?? "unknown",
@@ -210,8 +189,6 @@ function buildDebugHeaders({
   }
   if (page) headers["x-news-page"] = String(page);
   if (pageSize) headers["x-news-page-size"] = String(pageSize);
-  if (freshness?.from) headers["x-news-freshness-from"] = freshness.from;
-  if (freshness?.to) headers["x-news-freshness-to"] = freshness.to;
   return headers;
 }
 
@@ -418,12 +395,8 @@ async function fetchNewsApi({
   const params = new URLSearchParams(query ?? undefined);
   let page;
   let pageSize;
-  let freshness;
   let debugParams;
   if (!body) {
-    if (defaults?.freshnessHours) {
-      freshness = ensureFreshnessParams(params, defaults.freshnessHours);
-    }
     if (defaults?.enforceSort) {
       ensureSortParams(params);
     }
@@ -431,12 +404,6 @@ async function fetchNewsApi({
       const paging = ensurePageParams(params);
       page = paging.page;
       pageSize = paging.pageSize;
-    }
-    if (defaults?.enableClustering) {
-      ensureClustering(params);
-    }
-    if (defaults?.enableDeduplication) {
-      ensureDeduplication(params);
     }
   }
   removeForbiddenParams(params, allowedParams);
@@ -461,10 +428,6 @@ async function fetchNewsApi({
     const sanitizedBody = { ...body };
     let bodyPage;
     let bodyPageSize;
-    let bodyFreshness;
-    if (defaults?.freshnessHours) {
-      bodyFreshness = ensureBodyFreshnessParams(sanitizedBody, defaults.freshnessHours);
-    }
     if (defaults?.enforceSort) {
       ensureBodySortParams(sanitizedBody);
     }
@@ -481,17 +444,9 @@ async function fetchNewsApi({
     debugParams = sanitizedBody;
     if (!page && bodyPage) page = bodyPage;
     if (!pageSize && bodyPageSize) pageSize = bodyPageSize;
-    if (!freshness && bodyFreshness) freshness = bodyFreshness;
     init.body = JSON.stringify(sanitizedBody);
   }
-  const debugHeaders = buildDebugHeaders({
-    requestId,
-    routeName,
-    params: debugParams,
-    page,
-    pageSize,
-    freshness,
-  });
+  const debugHeaders = buildDebugHeaders({ requestId, routeName, params: debugParams, page, pageSize });
 
   console.log(
     `News API → ${init.method} ${upstreamUrl.toString()} (route=${routeName ?? path}, request=${requestId ?? "n/a"})`,
@@ -681,7 +636,6 @@ async function handleLocalNews(request, env) {
         lang,
       },
       defaults: {
-        freshnessHours: DEFAULT_FRESHNESS_HOURS,
         enforcePagination: true,
         enforceSort: true,
       },
@@ -716,11 +670,8 @@ async function handleLocalNews(request, env) {
       countries: [US_COUNTRY],
     },
     defaults: {
-      freshnessHours: DEFAULT_FRESHNESS_HOURS,
       enforcePagination: true,
       enforceSort: true,
-      enableClustering: true,
-      enableDeduplication: true,
     },
   });
   return ensureEmptyReason(response, "No local articles matched this location.");
@@ -748,7 +699,6 @@ async function handleBreakingNews(request, env) {
     routeName: "news.breaking",
     filterOptions,
     defaults: {
-      freshnessHours: BREAKING_FRESHNESS_HOURS,
       enforcePagination: true,
       enforceSort: true,
     },
@@ -772,7 +722,7 @@ async function handleBreakingNews(request, env) {
       const published = Date.parse(article?.published_date ?? "");
       if (!Number.isFinite(published)) return false;
       const ageMs = now - published;
-      return ageMs >= 0 && ageMs <= BREAKING_FRESHNESS_HOURS * 60 * 60 * 1000;
+      return ageMs >= 0;
     },
   );
   if (articles.length === 0) {
@@ -780,7 +730,7 @@ async function handleBreakingNews(request, env) {
       {
         ...primaryPayload,
         articles: [],
-        reason: "No breaking stories in the last 2 hours.",
+        reason: "No breaking stories right now.",
       },
       200,
       debugHeaders,
@@ -809,9 +759,12 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
   upstreamUrl.pathname = normalizeApiPath(pathSuffix);
 
   const params = new URLSearchParams(url.search);
-  let debugFreshness;
   let debugPaging;
   const allowedParams = pathSuffix === "/search" ? SEARCH_ALLOWED_PARAMS : undefined;
+  const allowedQueryParams =
+    pathSuffix === "/search"
+      ? new Set([...BASE_ALLOWED_PARAMS, ...SEARCH_EXTRA_PARAMS])
+      : BASE_ALLOWED_PARAMS;
   if (pathSuffix === "/search") {
     normalizeSearchParams(params);
     const q = params.get("q");
@@ -827,15 +780,12 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
       );
     }
   }
+  filterParamsToAllowlist(params, allowedQueryParams);
   if (pathSuffix === "/search" || pathSuffix === "/latest_headlines") {
-    debugFreshness = ensureFreshnessParams(params, DEFAULT_FRESHNESS_HOURS);
     ensureSortParams(params);
     debugPaging = ensurePageParams(params);
-    ensureClustering(params);
-    ensureDeduplication(params);
   }
   if (pathSuffix === "/breaking") {
-    debugFreshness = ensureFreshnessParams(params, BREAKING_FRESHNESS_HOURS);
     ensureSortParams(params);
     debugPaging = ensurePageParams(params);
   }
@@ -880,6 +830,7 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
       }
     }
     if (body) {
+      filterBodyToAllowlist(body, allowedQueryParams);
       for (const key of Object.keys(body)) {
         if (FORBIDDEN_PARAMS.has(key) && !(allowedParams ?? new Set()).has(key)) {
           delete body[key];
@@ -939,7 +890,6 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
         params: sanitizeParams(params, allowedParams),
         page: debugPaging?.page,
         pageSize: debugPaging?.pageSize,
-        freshness: debugFreshness,
       }),
     );
   }
@@ -959,7 +909,6 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
         params: sanitizeParams(params, allowedParams),
         page: debugPaging?.page,
         pageSize: debugPaging?.pageSize,
-        freshness: debugFreshness,
       }),
     );
   } catch (error) {
@@ -987,7 +936,6 @@ async function proxyRequest(request, env, { baseUrl, prefix }) {
         params: sanitizeParams(params, allowedParams),
         page: debugPaging?.page,
         pageSize: debugPaging?.pageSize,
-        freshness: debugFreshness,
       }),
     );
   }
