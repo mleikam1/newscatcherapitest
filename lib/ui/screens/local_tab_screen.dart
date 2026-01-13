@@ -139,12 +139,7 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
           .whereType<Map<String, dynamic>>()
           .map(Article.fromJson)
           .toList();
-      final filtered = ArticleFilter.filterAndSort(
-        parsed,
-        maxAge: ArticleFilter.localMaxAge,
-        context: "local_news",
-      );
-      if (page == 1 && filtered.length < 10) {
+      if (page == 1 && parsed.length < 10) {
         final nextMode = _nextFallbackMode(currentMode);
         if (nextMode != null) {
           currentMode = nextMode;
@@ -155,7 +150,7 @@ class _LocalTabScreenState extends State<LocalTabScreen> {
       }
       _fallbackMode = currentMode;
       return _LocalFetchResult(
-        articles: filtered,
+        articles: parsed,
         errorMessage: null,
         fallbackMessage: fallbackMessage,
       );

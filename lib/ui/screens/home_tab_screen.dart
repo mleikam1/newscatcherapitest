@@ -51,7 +51,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       loader: (page) => widget.aggregation.fetchLatestHeadlinesPage(
         page: page,
         pageSize: _pageSize,
-        language: _language,
       ),
       loadMore: loadMore,
     );
@@ -67,7 +66,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
       loader: (page) => widget.aggregation.fetchHomeFeedPage(
         page: page,
         pageSize: _pageSize,
-        language: _language,
       ),
       loadMore: loadMore,
     );
@@ -95,7 +93,6 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
 
     try {
       final response = await widget.aggregation.fetchBreakingNews(
-        language: _language,
       );
       final errorMessage = response.errorMessage;
       if (errorMessage != null) {
