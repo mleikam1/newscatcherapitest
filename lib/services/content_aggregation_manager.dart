@@ -8,11 +8,13 @@ class AggregatedFeedResult {
   final List<Article> articles;
   final String? errorMessage;
   final bool hasMore;
+  final int? totalCount;
 
   AggregatedFeedResult({
     required this.articles,
     required this.errorMessage,
     required this.hasMore,
+    required this.totalCount,
   });
 }
 
@@ -30,13 +32,16 @@ class ContentAggregationManager {
           articles: [],
           errorMessage: errorMessage,
           hasMore: false,
+          totalCount: null,
         );
       }
       final articles = _parseArticles(response);
+      final totalCount = _extractCount(response) ?? articles.length;
       return AggregatedFeedResult(
         articles: articles,
         errorMessage: null,
         hasMore: false,
+        totalCount: totalCount,
       );
     } catch (e, stack) {
       debugPrint("Home aggregation error: $e\n$stack");
@@ -44,6 +49,7 @@ class ContentAggregationManager {
         articles: [],
         errorMessage: e.toString(),
         hasMore: false,
+        totalCount: null,
       );
     }
   }
@@ -54,6 +60,20 @@ class ContentAggregationManager {
         .whereType<Map<String, dynamic>>()
         .map(Article.fromJson)
         .toList();
+  }
+
+  int? _extractCount(ApiResponse response) {
+    final json = response.json;
+    if (json == null) return null;
+    final value = json["count"] ??
+        json["total_hits"] ??
+        json["totalResults"] ??
+        json["total"] ??
+        json["total_articles"];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
   }
 
   String? _extractErrorMessage(ApiResponse response) {
