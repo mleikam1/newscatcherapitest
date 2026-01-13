@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import '../../models/article.dart';
 import '../../services/content_aggregation_manager.dart';
+import '../../services/article_prioritizer.dart';
 import '../screens/article_detail_screen.dart';
 import '../widgets/hero_story_card.dart';
+import '../widgets/paging_footer.dart';
 import '../widgets/section_header.dart';
 import '../widgets/story_list_row.dart';
 import '../widgets/state_message.dart';
@@ -21,6 +23,9 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   bool _isLoading = false;
   String? _error;
   int? _totalCount;
+  int _currentPage = 1;
+  bool _hasMore = true;
+  static const int _pageSize = 20;
 
   @override
   void initState() {
@@ -29,31 +34,46 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
   }
 
   Future<void> _loadTopStories() {
-    return _loadFeed(() => widget.aggregation.fetchHomeFeedPage());
+    return _loadFeed(reset: true);
   }
 
-  Future<void> _loadFeed(
-    Future<AggregatedFeedResult> Function() loader,
-  ) async {
+  Future<void> _loadFeed({bool reset = false}) async {
     if (_isLoading) return;
+    if (!_hasMore && !reset) return;
 
+    final nextPage = reset ? 1 : _currentPage + 1;
     setState(() {
       _isLoading = true;
       _error = null;
-      _articles = [];
-      _totalCount = null;
+      if (reset) {
+        _articles = [];
+        _totalCount = null;
+        _hasMore = true;
+        _currentPage = 1;
+      }
     });
 
     try {
-      final response = await loader();
+      final response = await widget.aggregation.fetchHomeFeedPage(
+        page: nextPage,
+        pageSize: _pageSize,
+      );
       final errorMessage = response.errorMessage;
       if (errorMessage != null) {
         setState(() => _error = errorMessage);
         return;
       }
+      final incoming = prioritizePreferredPublishers(response.articles);
+      final merged = prioritizePreferredPublishers(
+        _mergeUnique(_articles, incoming),
+      );
       setState(() {
-        _articles = response.articles;
-        _totalCount = response.totalCount;
+        _articles = merged;
+        _totalCount = response.totalCount ?? _totalCount;
+        _currentPage = nextPage;
+        if (response.articles.isEmpty) {
+          _hasMore = false;
+        }
       });
     } catch (e, stack) {
       final message = "Home tab error: $e";
@@ -64,6 +84,34 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     } finally {
       setState(() => _isLoading = false);
     }
+  }
+
+  List<Article> _mergeUnique(List<Article> existing, List<Article> incoming) {
+    if (existing.isEmpty) return incoming;
+    final seen = existing.map(_articleKey).toSet();
+    final merged = [...existing];
+    for (final article in incoming) {
+      final key = _articleKey(article);
+      if (seen.add(key)) {
+        merged.add(article);
+      }
+    }
+    return merged;
+  }
+
+  String _articleKey(Article article) {
+    if (article.id != null && article.id!.isNotEmpty) {
+      return article.id!;
+    }
+    final link = article.link;
+    if (link != null && link.isNotEmpty) {
+      final uri = Uri.tryParse(link);
+      if (uri != null) {
+        return "${uri.host.toLowerCase()}${uri.path.toLowerCase()}";
+      }
+      return link;
+    }
+    return "${article.title ?? ""}-${article.publishedDate ?? ""}";
   }
 
   void _openDetail(Article article) {
@@ -101,6 +149,7 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
     final items = articles;
     final hasCount = totalCount != null;
     final isEmpty = hasCount ? totalCount == 0 : items.isEmpty;
+    final canLoadMore = _hasMore && items.length >= _pageSize;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,6 +187,11 @@ class _HomeTabScreenState extends State<HomeTabScreen> {
                 article: article,
                 onTap: () => _openDetail(article),
               ),
+            PagingFooter(
+              isLoading: isLoading,
+              hasMore: canLoadMore,
+              onMore: _loadFeed,
+            ),
           ],
         ],
       ],

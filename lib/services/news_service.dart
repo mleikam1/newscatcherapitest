@@ -30,10 +30,14 @@ class NewsService {
 
   Future<ApiResponse> search({
     required String q,
+    int page = 1,
+    int pageSize = 20,
   }) {
     _requireNonEmpty("q", q);
     final query = <String, String>{
       "q": q,
+      "page": "$page",
+      "page_size": "$pageSize",
     };
     return _client
         .get(
@@ -45,12 +49,19 @@ class NewsService {
         .then(_requireArticles);
   }
 
-  Future<ApiResponse> latestHeadlines() {
+  Future<ApiResponse> latestHeadlines({
+    int page = 1,
+    int pageSize = 20,
+  }) {
     return _client
         .get(
           isNews: true,
           path: _home,
           endpointName: "news.home",
+          query: {
+            "page": "$page",
+            "page_size": "$pageSize",
+          },
         )
         .then(_requireArticles);
   }

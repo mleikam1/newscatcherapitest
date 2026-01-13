@@ -11,6 +11,7 @@ class Article {
   final String? updatedDate;
   final String? sourceName;
   final String? sourceUrl;
+  final String? domainUrl;
   final String? language;
   final String? country;
   final bool isBreakingNews;
@@ -28,6 +29,7 @@ class Article {
     required this.updatedDate,
     required this.sourceName,
     required this.sourceUrl,
+    required this.domainUrl,
     required this.language,
     required this.country,
     required this.isBreakingNews,
@@ -54,6 +56,7 @@ class Article {
     final sourceName = (json["clean_url"] ?? json["source"] ?? json["source_name"])
         ?.toString();
     final sourceUrl = json["source_url"]?.toString();
+    final domainUrl = json["domain_url"]?.toString();
     final language = json["language"]?.toString();
     final country = json["country"]?.toString();
     final id = json["article_id"]?.toString() ?? json["id"]?.toString();
@@ -72,6 +75,7 @@ class Article {
       updatedDate: updatedDate,
       sourceName: sourceName,
       sourceUrl: sourceUrl,
+      domainUrl: domainUrl,
       language: language,
       country: country,
       isBreakingNews: isBreaking,
@@ -94,6 +98,7 @@ class Article {
       updatedDate: updatedDate,
       sourceName: sourceName,
       sourceUrl: sourceUrl,
+      domainUrl: domainUrl,
       language: language,
       country: country,
       isBreakingNews: isBreakingNews ?? this.isBreakingNews,
